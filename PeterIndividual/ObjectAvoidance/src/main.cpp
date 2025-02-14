@@ -57,8 +57,10 @@ void setup() {
 }
 
 void loop() {
+  // Drive the robot forward until an object is detected
   if(getDistance() < 10)
   {
+    // preprogramed sequence of moves for avoiding the object
     drive(50, 100, 0.45);
     drive(50, 0, 0.75);
     drive(50, -100, 0.45);
@@ -69,6 +71,7 @@ void loop() {
   }
   else
   {
+    // If no object is detected drive forward
     drive(50);
   }
 }
@@ -132,7 +135,7 @@ void setMotorSpeed(int leftSpeed, int rightSpeed)
   // Disable the power for the oposite 
   analogWrite(leftSpeed < 0 ? L_FWD : L_BWD, 0);
   analogWrite(rightSpeed < 0 ? R_FWD : R_BWD, 0);
-  // Provide a spped boost for the motor to start
+  // Provide a speed boost for the motor to start
   if(leftSpeed != 0 && _currentLeftSpeed != leftSpeed) analogWrite(leftSpeed < 0 ? L_BWD : L_FWD, 255);
   if(rightSpeed != 0 && _currentRightSpeed != rightSpeed) analogWrite(rightSpeed < 0 ? R_BWD : R_FWD, 255);
   delay(40);

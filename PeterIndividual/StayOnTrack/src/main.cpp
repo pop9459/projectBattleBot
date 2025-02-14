@@ -40,7 +40,7 @@ volatile unsigned int _rightPulses; //number of pulses counted by the right rota
 int _minValues[] = {1023, 1023, 1023, 1023, 1023, 1023}; //DARKEST VALUES
 int _maxValues[] = {500, 500, 500, 500, 500, 500}; //LIGHTEST VALUES
 int _lineTresholds[] = {800, 800, 800, 800, 800, 800}; //treshold for the line sensors
-float _line_sensor_modifiers[] = {6, 3.5, 1.75, -1.75, -3.5, -6};
+float _line_sensor_modifiers[] = {6, 3.5, 1.75, -1.75, -3.5, -6}; // weights for adjusting the intensity of steering based on the sensor position
 
 int _currentLeftSpeed = 0; //current speed of the left motor
 int _currentRightSpeed = 0; //current speed of the right motor
@@ -76,17 +76,7 @@ void setup() {
   // calibrate the line sensors
   calibrateSensors();
 
-  // debug info REMOVE LATER
-  Serial.println("Max values:");
-  for (int i = 0; i < 6; i++)
-  {
-    Serial.println(_maxValues[i]);
-  }
-  Serial.println("Min values:");
-  for (int i = 0; i < 6; i++)
-  {
-    Serial.println(_minValues[i]);
-  }
+  // Wait for user input from the US sensor before starting the main loop
   while (getDistance() > 10)
   {
     //wait for signal
@@ -94,22 +84,24 @@ void setup() {
 }
 
 void loop() {
-  float steerVal = 0;
-  int diff = 0;
-  float Kp = 0.02;
+  float steerVal = 0; // Value that specifies the steering direction and intensity
+  int diff = 0; // Calc value to determine how far off the robot is from the line and in which direction
+  float Kp = 0.02; // Proportional constant for fine tuning the controller
   int lineSensorPins[] = LINE_SENSOR_PINS;
   for (int i = 0; i < 6; i++) {
-    int sensorValue = analogRead(lineSensorPins[i]);
-    int adjustedValue = (sensorValue - _minValues[i]) * _line_sensor_modifiers[i] ; // Subtract the sensor minimums
-    diff += adjustedValue;
+    int sensorValue = analogRead(lineSensorPins[i]); // Read the sensor value from each sensor
+    int adjustedValue = (sensorValue - _minValues[i]) * _line_sensor_modifiers[i] ; // Subtract the sensor minimums to reach a common baseline and multiply based on sensor position
+    diff += adjustedValue; // Add the adjusted value to the diff variable
   }
 
-  steerVal = Kp * diff;
-  Serial.print("SteerVal: ");
-  Serial.println(steerVal);
-  drive(85, steerVal);
+  steerVal = Kp * diff; // Apply the proportional constant for fine tuning
+  drive(85, steerVal); // Apply the drive function with the calculated steering value
+  
+  // TODO: controll speed based on the steering intensity
 }
 
+// Function used for calculating the error of each of the line sensors
+// Use in the begining of the execution
 void calibrateSensors()
 {
   int startTime = millis(); //mark the starting time
@@ -117,6 +109,7 @@ void calibrateSensors()
   int lineSensorPins[] = LINE_SENSOR_PINS;
   drive(55); //start slowly creeping forward
   
+  // Drive over a small distance and mark the brightest and dimmest values for each sensor
   while(millis() - startTime < calibrationTime)
   {
     for (int i = 0; i < 6; i++)
@@ -128,7 +121,7 @@ void calibrateSensors()
   }
   drive(0); //stop the robot
 
-  //calculate the tresholds
+  //calculate the tresholds (the average between the brightest and dimmest values)
   for (int i = 0; i < 6; i++)
   {
     _lineTresholds[i] = (_maxValues[i] + _minValues[i]) / 2;
@@ -136,6 +129,8 @@ void calibrateSensors()
 }
 
 // Function for retrieving the distance from the ultrasonic sensor
+// This function sends a pulse to the ultrasonic sensor and measures the time it takes for the echo to return
+// Based on the speed of sound the distance is calculated
 float getDistance()
 {
   digitalWrite(US_TRIG_PIN, LOW);
