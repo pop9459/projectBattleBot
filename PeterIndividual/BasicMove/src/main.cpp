@@ -46,6 +46,12 @@ void setup() {
   pinMode(R_BWD, OUTPUT);
   pinMode(L_ROT, INPUT);
   pinMode(R_ROT, INPUT);
+
+  //reset pins
+  digitalWrite(L_FWD, LOW);
+  digitalWrite(R_FWD, LOW);
+  digitalWrite(L_BWD, LOW);
+  digitalWrite(R_BWD, LOW);
 }
 
 void loop() {
@@ -54,11 +60,9 @@ void loop() {
   delay(50);
   drive(-50, 0, 2);
   delay(50);
-  drive(50, 100, 0.45);
+  drive(50, -50, 0.85);
   delay(50);
-  drive(50, -100, 0.45);
-  delay(50);
-  drive(50, 50, 3.75);
+  drive(50, 100, 0.5);
   delay(1000);
 }
 

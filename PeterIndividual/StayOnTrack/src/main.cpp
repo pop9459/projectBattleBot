@@ -2,7 +2,6 @@
 
 //function definitions
 
-void driveRot(float rotationsToDrive);
 void leftSensorPulse();
 void rightSensorPulse();
 
@@ -69,6 +68,12 @@ void setup() {
   pinMode(A4, INPUT);
   pinMode(A5, INPUT);
 
+  //reset pins
+  digitalWrite(L_FWD, LOW);
+  digitalWrite(R_FWD, LOW);
+  digitalWrite(L_BWD, LOW);
+  digitalWrite(R_BWD, LOW);
+
   //set the ultrasonic sensor pins
   pinMode(US_TRIG_PIN, OUTPUT);
   pinMode(US_ECHO_PIN, INPUT);
@@ -88,6 +93,8 @@ void loop() {
   int diff = 0; // Calc value to determine how far off the robot is from the line and in which direction
   float Kp = 0.02; // Proportional constant for fine tuning the controller
   int lineSensorPins[] = LINE_SENSOR_PINS;
+  int speed;
+
   for (int i = 0; i < 6; i++) {
     int sensorValue = analogRead(lineSensorPins[i]); // Read the sensor value from each sensor
     int adjustedValue = (sensorValue - _minValues[i]) * _line_sensor_modifiers[i] ; // Subtract the sensor minimums to reach a common baseline and multiply based on sensor position
@@ -95,9 +102,15 @@ void loop() {
   }
 
   steerVal = Kp * diff; // Apply the proportional constant for fine tuning
-  drive(85, steerVal); // Apply the drive function with the calculated steering value
-  
-  // TODO: controll speed based on the steering intensity
+  if(abs(steerVal) > 30)
+  {
+    speed = 85;
+  }
+  else
+  {
+    speed = 100;
+  }
+  drive(speed, steerVal); // Apply the drive function with the calculated steering value
 }
 
 // Function used for calculating the error of each of the line sensors
