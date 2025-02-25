@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <Adafruit_NeoPixel.h>
 
 //function definitions
 
@@ -16,6 +17,7 @@ void setMotorSpeed(int leftSpeed, int rightSpeed);
 void followWallInMaze(int speed);
 void followLine(int slowSpeed, int fastSpeed);
 void setGripper(int position);
+void setLights(int startIndex, int endIndex, int r, int g, int b);
 
 // Motor pins
 #define L_FWD 5 // Left motor forward pin
@@ -28,16 +30,22 @@ void setGripper(int position);
 // LINE SENSOR PINS
 int _lineSensorPins[] = {A0, A1, A2, A3, A4, A5};
 
+// Neopixel constants and definitions
+#define NEOPIXEL_PIN 4 // Neopixel pin
+Adafruit_NeoPixel pixels = Adafruit_NeoPixel(4, NEOPIXEL_PIN, NEO_RGB + NEO_KHZ800);
+
 // Ultrasonic sensor pins
 #define US_TRIG_PIN 12 // Ultrasonic sensor trigger pin
 #define FRONT_US_ECHO_PIN 13 // Front ultrasonic sensor echo pin
 #define LEFT_US_ECHO_PIN 7 // Front ultrasonic sensor echo pin
 #define RIGHT_US_ECHO_PIN 8 // Front ultrasonic sensor echo pin
 
+// Gripper constants
 #define GRIPPER_PIN 11 // Gripper servo pin
 #define GRIPPER_OPEN 110 // Gripper open position
 #define GRIPPER_CLOSE 40 // Gripper close position
 
+// Driving constants
 #define PULSES_PER_REVOLUTION 20 // Number of pulses the rotation sensor outputs per revolution 
 #define STEERING_ADJUSTMENT 2 // Used to balance the speed
 
@@ -54,6 +62,10 @@ int _currentLeftSpeed = 0; //current speed of the left motor
 int _currentRightSpeed = 0; //current speed of the right motor
 
 void setup() {
+  // Initialize the neopixels  
+  pixels.begin();
+  setLights(0, 3, 255, 0, 0); // Set the lights to blue
+
   // Initialize serial communication for debuging
   Serial.begin(9600); 
 
@@ -91,30 +103,29 @@ void setup() {
   pinMode(LEFT_US_ECHO_PIN, INPUT);
   pinMode(RIGHT_US_ECHO_PIN, INPUT);
 
+  // Indicate "override movement"
+  setLights(0, 3, 255, 165, 0); // Set the lights to green
+
   // Calibrate the line sensors
+  // This will allow the robot to get close egougth to the cone to pick it up
   calibrateSensors();
   
   setGripper(GRIPPER_CLOSE); // Open the gripper
 
-  delay(500); 
+  delay(500); // Small delay to prevent cone bumping 
 
-  drive(60, 0, 0.25);
-  
-  drive(60, -35, 1); // Turn left
+  // manually steer into the maze
+  drive(60, 0, 0.25); // forward a bit
+  drive(60, -35, 1); // steer left
 
+  // follow the short line untill in a set possition
   while (getDistance(FRONT_US_ECHO_PIN) > 10)
   {
-    followLine(60, 60);
+    followLine(85, 100);
   }
 }
 
 void loop() {
-  int startTime = millis();
-  // while (millis() - startTime < 3000)
-  // {
-  //   followWallInMaze(100);
-  // }
-  
   bool checkPointDetected = false;
   while (checkPointDetected == false)
   {
@@ -130,11 +141,36 @@ void loop() {
       }
     }
   }
+  
+  setLights(0, 3, 0, 0, 255); // Set the lights to blue
 
-  while (true)
+  bool allSensorsDark = true;
+  while (allSensorsDark)
   {
     followLine(85, 100);
+    for (int i = 0; i < 6; i++) {
+      int sensorValue = analogRead(_lineSensorPins[i]);
+      if (sensorValue < _lineTresholds[i]) {
+        allSensorsDark = false;
+        break;
+      }
+    }
   } 
+  drive(0); // Stop the robot
+  setLights(0, 3, 255, 0, 0); // Set the lights to red
+  while (true)
+  {
+    /* code */
+  }
+}
+
+void setLights(int startIndex, int endIndex, int r, int g, int b)
+{
+  for(int i = startIndex; i <= endIndex; i++)
+  {
+    pixels.setPixelColor(i, pixels.Color(r, g, b));
+  }
+  pixels.show();
 }
 
 void setGripper(int position)
@@ -182,7 +218,7 @@ void followLine(int slowSpeed, int fastSpeed)
 void followWallInMaze(int speed)
 {
   float distance = getDistance(RIGHT_US_ECHO_PIN);
-  float targetDistance = 8.0; // Target distance from the wall
+  float targetDistance = 7.5; // Target distance from the wall
   float error = targetDistance - distance;
   float Kp = -10.0; // Proportional gain
 
@@ -196,7 +232,9 @@ void followWallInMaze(int speed)
   float frontDistance = getDistance(FRONT_US_ECHO_PIN);
   if(frontDistance < 10)
   {
-    drive(speed, -100, 0.5);
+    setLights(0, 3, 255, 165, 0); // Set the lights to blue
+    drive(100, -100, 0.5);
+    setLights(0, 3, 0, 255, 0); // Set the lights to green
   }
 }
 
