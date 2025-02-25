@@ -54,6 +54,12 @@ void setup() {
   //set the ultrasonic sensor pins
   pinMode(US_TRIG_PIN, OUTPUT);
   pinMode(US_ECHO_PIN, INPUT);
+
+  //reset pins
+  digitalWrite(L_FWD, LOW);
+  digitalWrite(R_FWD, LOW);
+  digitalWrite(L_BWD, LOW);
+  digitalWrite(R_BWD, LOW);
 }
 
 void loop() {
