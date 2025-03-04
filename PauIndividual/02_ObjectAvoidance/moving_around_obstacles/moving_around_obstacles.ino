@@ -11,7 +11,7 @@ int trigger = 12;
 int echo = 13;
 
 // Define distance threshold (in cm)
-const int distanceThreshold = 20;
+const int distanceThreshold = 10;
 
 // Speed Value
 const int speedValue = 90;
@@ -46,7 +46,24 @@ void loop() {
     // Obstacle detected: Avoid it
     stopMotors();
     delay(500);  // Pause briefly
-    avoidObstacle();
+    turnRight();
+    moveForward();
+    delay(500);
+    stopMotors();
+    delay(500);
+    turnLeft();
+    moveForward();
+    delay(1500);
+    stopMotors();
+    delay(500);
+    turnLeft();
+    moveForward();
+    delay(500);
+    stopMotors();
+    delay(500);
+    turnRight();
+    moveForward();
+    delay(1000);
   }
 }
 

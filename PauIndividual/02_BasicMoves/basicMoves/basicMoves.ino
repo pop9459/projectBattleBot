@@ -29,7 +29,19 @@ void setup() {
 
 void loop() {
   moveForward();
-  
+  delay(5000);
+  stopMotors();
+  delay(500);
+  moveBackward();
+  delay(5000);
+  stopMotors();
+  delay(500);
+  turnLeft();
+  stopMotors();
+  delay(500);
+  turnRight();
+  stopMotors();
+  delay(1000);  
 }
 
 void moveForward() {
@@ -62,7 +74,7 @@ void turnRight() {
   delay(400);
 }
 
-void stopRobot(){
+void stopMotors() {
   digitalWrite(motorA1, LOW);
   digitalWrite(motorA2, LOW);
   digitalWrite(motorB1, LOW);
