@@ -55,15 +55,11 @@ void setup() {
 }
 
 void loop() {
-  // Basic movement pattern
-  drive(50, 0, 2);
-  delay(50);
-  drive(-50, 0, 2);
-  delay(50);
-  drive(50, -50, 0.85);
-  delay(50);
-  drive(50, 100, 0.5);
-  delay(1000);
+  drive(-100, 75, 0.5); // forward a bit
+  while(true)
+  {
+
+  }
 }
 
 //function for easy controll of the robot movement 
