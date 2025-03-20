@@ -6,12 +6,15 @@
 void leftSensorPulse();
 void rightSensorPulse();
 
-float getDistance(int echoPin, int triggerPin);
+float getLeftDistance();
+float getRightDistance();
+float getFrontDistance();
 
 void calibrateSensors();
 void drive(int speedPercent, int steerPercent = 0, float numRotations = 0);
 void setMotorSpeed(int leftSpeed, int rightSpeed);
-void followWallInMaze(int speed);
+void followRightWall(int speed);
+void followLeftWall(int speed);
 void followLine(int slowSpeed, int fastSpeed);
 void setGripper(int position);
 void setLights(int startIndex, int endIndex, int r, int g, int b);
@@ -65,10 +68,14 @@ float _line_sensor_modifiers[] = {6, 3.5, 1.75, -1.75, -3.5, -6}; // weights for
 int _currentLeftSpeed = 0; //current speed of the left motor
 int _currentRightSpeed = 0; //current speed of the right motor
 
+int _leftDistance; // Lats distance from the left ultrasonic sensor
+int _frontDistance; // Lats distance from the front ultrasonic sensor
+int _rightDistance; // Lats distance from the right ultrasonic sensor
+
 // Maze dimensions
 const int MAZE_WIDTH = 7;
-const int MAZE_HEIGHT = 5;
-int _mazeGoalX = 5; 
+const int MAZE_HEIGHT = 3;
+int _mazeGoalX = 1; 
 int _mazeGoalY = 0;
 
 // Maze grid to store walls and distances
@@ -85,7 +92,7 @@ struct Cell {
 Cell _mazeGrid[MAZE_HEIGHT][MAZE_WIDTH];
 
 // Robot's current position and orientation
-int _robotX = 1; // Starting X position
+int _robotX = 5; // Starting X position
 int _robotY = 0; // Starting Y position
 int _robotDir = 0; // 0 = Up, 1 = Right, 2 = Down, 3 = Left
 
@@ -99,7 +106,7 @@ void setup() {
   // Initialize serial communication for debuging
   Serial.begin(9600); 
 
-  setGripper(GRIPPER_OPEN); // open the gripper
+  // setGripper(GRIPPER_OPEN); // open the gripper
 
   //begin the interrupt functions to count the rotations
   attachInterrupt(digitalPinToInterrupt(L_ROT), leftSensorPulse, RISING);
@@ -180,11 +187,11 @@ void loop() {
 
     // Print sensor readings
     Serial.print("Front Distance: ");
-    Serial.print(getDistance(FRONT_US_ECHO_PIN, FRONT_US_TRIG_PIN));
+    Serial.print(getFrontDistance());
     Serial.print(" cm, Left Distance: ");
-    Serial.print(getDistance(LEFT_US_ECHO_PIN, LEFT_US_TRIG_PIN));
+    Serial.print(getLeftDistance());
     Serial.print(" cm, Right Distance: ");
-    Serial.print(getDistance(RIGHT_US_ECHO_PIN, RIGHT_US_TRIG_PIN));
+    Serial.print(getRightDistance());
     Serial.println(" cm");
 
     // Print the entire maze grid status
@@ -300,7 +307,7 @@ void updateFloodFill() {
 
 void updateMazeWithSensors() {
   // Check front wall
-  if (getDistance(FRONT_US_ECHO_PIN, FRONT_US_TRIG_PIN) < 12) {
+  if (getFrontDistance() < 12) {
     if (_robotDir == 0)
     {
       _mazeGrid[_robotY][_robotX].northWall = true; // Facing North
@@ -324,7 +331,7 @@ void updateMazeWithSensors() {
   }
 
   // Check left wall
-  if (getDistance(LEFT_US_ECHO_PIN, LEFT_US_TRIG_PIN) < 15) {
+  if (getLeftDistance() < 15) {
     if (_robotDir == 0) {
       _mazeGrid[_robotY][_robotX].westWall = true; // Facing North
       _mazeGrid[_robotY][_robotX - 1].eastWall = true;
@@ -341,7 +348,7 @@ void updateMazeWithSensors() {
   }
 
   // Check right wall
-  if (getDistance(RIGHT_US_ECHO_PIN, RIGHT_US_TRIG_PIN) < 15) {
+  if (getRightDistance() < 15) {
     if (_robotDir == 0) {
       _mazeGrid[_robotY][_robotX].eastWall = true; // Facing North
       _mazeGrid[_robotY][_robotX + 1].westWall = true;
@@ -382,28 +389,57 @@ void moveToNextCell() {
     nextDir = 3; // West
   }
 
+  int turnAngle = (nextDir - _robotDir + 4) % 4;
+  unsigned int startLeftPulses;
+  unsigned int startRightPulses;
+  int targetPulses;
+  int motorSpeed = 70;
 
-  // Turn and move to the next cell
-  if (nextDir != _robotDir) {
-    // Turn the robot to face the next direction
-    int turnAngle = (nextDir - _robotDir + 4) % 4;
-    if (turnAngle == 1)
+  Serial.print("Next Direction: ");
+  Serial.println(nextDir);
+
+  switch (turnAngle)
+  {
+    case 0:
+      // GO STRAIGHT
+      break;
+    case 1:
+      drive(motorSpeed, 100, 0.4);
+      break;
+    case 2:
+      drive(-motorSpeed, 50, 0.9);
+      drive(motorSpeed, -50, 0.9);
+      drive(-motorSpeed, 0, 0.5);
+      break;
+    case 3:
+      drive(motorSpeed, -100, 0.4);
+      break;
+    default:
+      // HELP
+      break;
+  } 
+  
+  targetPulses = _leftPulses + 28;
+  while (_leftPulses < targetPulses && getFrontDistance() > 7.5) 
+  {
+    if(_rightDistance < 15 && _rightDistance < _leftDistance)
     {
-      drive(60, 100, 0.5); // Turn right
-    } 
-    else if (turnAngle == 3)
+      followRightWall(motorSpeed);
+    }
+    else if(_leftDistance < 15)
     {
-      drive(60, -100, 0.5); // Turn left
-    } 
-    else if (turnAngle == 2)
+      followLeftWall(motorSpeed);
+    }
+    else
     {
-      drive(60, 100, 1); // Turn around
-    } 
-    _robotDir = nextDir;
+      _leftDistance = getLeftDistance();
+      _rightDistance = getRightDistance();
+      drive(motorSpeed);
+    }
   }
 
-  // Move forward
-  drive(60, 0, 0.25);
+  drive(0);
+  _robotDir = nextDir;  
 
   // Update robot position
   if (_robotDir == 0) _robotY++;
@@ -457,10 +493,6 @@ void initializeMazeArray()
       } 
     }
   } 
-
-  // DEBUG WALLS
-  _mazeGrid[0][2].eastWall = true;
-  _mazeGrid[0][3].westWall = true;
 }
 
 void setLights(int startIndex, int endIndex, int r, int g, int b)
@@ -514,38 +546,34 @@ void followLine(int slowSpeed, int fastSpeed)
   drive(speed, steerVal); // Apply the drive function with the calculated steering value
 }
 
-void followWallInMaze(int speed)
+void followRightWall(int speed)
 {
-  float distance = getDistance(RIGHT_US_ECHO_PIN, RIGHT_US_TRIG_PIN);
-  float targetDistance = 8; // Target distance from the wall
-  float error = targetDistance - distance; // The difference between the target distance and the actual distance
-  float Kp = -10.0; // Proportional gain - fine tunung value
+  float wallDistance = getRightDistance();
+  float targetDistance = 8.5; // Target distance from the wall
+  float error = targetDistance - wallDistance; // The difference between the target distance and the actual distance
+  float Kp = -15.0; // Proportional gain - fine tunung value
 
   // Calculate the steering adjustment based on the proportional controller
   float steerPercent = Kp * error;
 
   // Drive the robot with the calculated steering adjustment
-  steerPercent = constrain(steerPercent, -35, 35);
+  steerPercent = constrain(steerPercent, -33, 33);
   drive(speed, steerPercent);
-  
-  float frontDistance = getDistance(FRONT_US_ECHO_PIN, FRONT_US_TRIG_PIN);
-  if(frontDistance < 12)
-  {
-    setLights(0, 3, 255, 165, 0); // Set the lights to orange - indicate different movement
-    //determine the type of the turn - different situations require different allignments
-    if(getDistance(LEFT_US_ECHO_PIN, LEFT_US_TRIG_PIN) < 15)
-    {
-      //turn around 180 degrees
-      drive(-100, 50, 0.9);
-      drive(100, -50, 0.9);
-    }
-    else
-    {
-      //turn right 90 degrees
-      drive(-100, 85, 0.5);
-    }
-    setLights(0, 3, 0, 255, 0); // Set the lights to green - indicate normal movement
-  }
+}
+
+void followLeftWall(int speed)
+{
+  float wallDistance = getLeftDistance();
+  float targetDistance = 8.5; // Target distance from the wall
+  float error = targetDistance - wallDistance; // The difference between the target distance and the actual distance
+  float Kp = 15.0; // Proportional gain - fine tunung value
+
+  // Calculate the steering adjustment based on the proportional controller
+  float steerPercent = Kp * error;
+
+  // Drive the robot with the calculated steering adjustment
+  steerPercent = constrain(steerPercent, -33, 33);
+  drive(speed, steerPercent);
 }
 
 // Function used for calculating the error of each of the line sensors
@@ -575,19 +603,63 @@ void calibrateSensors()
   }
 }
 
-// Function for retrieving the distance from the ultrasonic sensor
+// Function for retrieving the distance from the left ultrasonic sensor
 // This function sends a pulse to the ultrasonic sensor and measures the time it takes for the echo to return
 // Based on the speed of sound the distance is calculated
-float getDistance(int echoPin, int triggerPin)
+float getLeftDistance()
 {
-  digitalWrite(triggerPin, LOW);
+  digitalWrite(LEFT_US_TRIG_PIN, LOW);
   delayMicroseconds(2);
-  digitalWrite(triggerPin, HIGH);
+  digitalWrite(LEFT_US_TRIG_PIN, HIGH);
   delayMicroseconds(10);
-  digitalWrite(triggerPin, LOW);
+  digitalWrite(LEFT_US_TRIG_PIN, LOW);
 
-  float duration = pulseIn(echoPin, HIGH);
+  float duration = pulseIn(LEFT_US_ECHO_PIN, HIGH);
   float distance = duration * 0.034 / 2;
+
+  _leftDistance = distance;
+
+  delay(25); // Delay to prevent interference between measurements
+
+  return distance;
+}
+
+// Function for retrieving the distance from the right ultrasonic sensor
+// This function sends a pulse to the ultrasonic sensor and measures the time it takes for the echo to return
+// Based on the speed of sound the distance is calculated
+float getRightDistance()
+{
+  digitalWrite(RIGHT_US_TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(RIGHT_US_TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(RIGHT_US_TRIG_PIN, LOW);
+
+  float duration = pulseIn(RIGHT_US_ECHO_PIN, HIGH);
+  float distance = duration * 0.034 / 2;
+
+  _rightDistance = distance;
+
+  delay(25); // Delay to prevent interference between measurements
+
+  return distance;
+}
+
+// Function for retrieving the distance from the left ultrasonic sensor
+// This function sends a pulse to the ultrasonic sensor and measures the time it takes for the echo to return
+// Based on the speed of sound the distance is calculated
+float getFrontDistance()
+{
+  digitalWrite(FRONT_US_TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(FRONT_US_TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(FRONT_US_TRIG_PIN, LOW);
+
+  float duration = pulseIn(FRONT_US_ECHO_PIN, HIGH);
+  float distance = duration * 0.034 / 2;
+
+  _frontDistance = distance;
 
   delay(25); // Delay to prevent interference between measurements
 
