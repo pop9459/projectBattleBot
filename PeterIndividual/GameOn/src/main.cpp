@@ -75,7 +75,7 @@ int _rightDistance; // Lats distance from the right ultrasonic sensor
 // Maze dimensions
 const int MAZE_WIDTH = 7;
 const int MAZE_HEIGHT = 3;
-int _mazeGoalX = 1; 
+int _mazeGoalX = 5; 
 int _mazeGoalY = 0;
 
 // Maze grid to store walls and distances
@@ -92,7 +92,7 @@ struct Cell {
 Cell _mazeGrid[MAZE_HEIGHT][MAZE_WIDTH];
 
 // Robot's current position and orientation
-int _robotX = 5; // Starting X position
+int _robotX = 1; // Starting X position
 int _robotY = 0; // Starting Y position
 int _robotDir = 0; // 0 = Up, 1 = Right, 2 = Down, 3 = Left
 
