@@ -7,7 +7,7 @@ void rightSensorPulse();
 
 void drive(int speedPercent, int steerPercent = 0, float numRotations = 0);
 void setMotorSpeed(int leftSpeed, int rightSpeed);
-void followWallInMaze(int speed);
+void followRightWall(int speed);
 void setGripper(int position);
 
 // Motor pins
