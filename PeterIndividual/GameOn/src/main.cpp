@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
+#include <Adafruit_LSM6DS3TRC.h>
 
 //function definitions
 
@@ -18,6 +19,7 @@ void followLeftWall(int speed);
 void followLine(int slowSpeed, int fastSpeed);
 void setGripper(int position);
 void setLights(int startIndex, int endIndex, int r, int g, int b);
+void turnToAngle(int angleGoalDegrees, int speed);
 
 void updateMazeWithSensors();
 void moveToNextCell();
@@ -33,11 +35,14 @@ void initializeMazeArray();
 #define R_ROT 3 // Right rotation sensor pin -R2
 
 // LINE SENSOR PINS
-int _lineSensorPins[] = {A6, A7, A2, A3, A4, A5};
+int _lineSensorPins[] = {A6, A7, A2, A3};
 
 // Neopixel constants and definitions
 #define NEOPIXEL_PIN 4 // Neopixel pin
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(4, NEOPIXEL_PIN, NEO_RGB + NEO_KHZ800);
+
+// Gyroscope object
+Adafruit_LSM6DS3TRC lsm6ds;
 
 // Ultrasonic sensor pins
 #define FRONT_US_TRIG_PIN 12 // Ultrasonic sensor trigger pin
@@ -77,6 +82,13 @@ const int MAZE_WIDTH = 7;
 const int MAZE_HEIGHT = 3;
 int _mazeGoalX = 5; 
 int _mazeGoalY = 0;
+int _mazeStartX = 1;
+int _mazeStartY = 0;
+
+// Robot's current position and orientation
+int _robotX = _mazeStartX; // Starting X position
+int _robotY = _mazeStartY; // Starting Y position
+int _robotDir = 0; // 0 = Up, 1 = Right, 2 = Down, 3 = Left
 
 // Maze grid to store walls and distances
 struct Cell {
@@ -91,12 +103,10 @@ struct Cell {
 
 Cell _mazeGrid[MAZE_HEIGHT][MAZE_WIDTH];
 
-// Robot's current position and orientation
-int _robotX = 1; // Starting X position
-int _robotY = 0; // Starting Y position
-int _robotDir = 0; // 0 = Up, 1 = Right, 2 = Down, 3 = Left
-
 bool _printDebug = false;
+
+int _motorSpeed = 80;
+
 
 void setup() {
   // Initialize the neopixels  
@@ -121,9 +131,19 @@ void setup() {
   pinMode(R_ROT, INPUT);
 
   // Set the line sensor pins using a for loop
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < 4; i++) {
     pinMode(_lineSensorPins[i], INPUT);
   }
+
+  //gyroscope pins
+  pinMode(A4, INPUT);
+  pinMode(A5, INPUT);
+  if (!lsm6ds.begin_I2C()) 
+  {
+    Serial.println("Failed to find LSM6DS3TR-C chip");
+    while (1);
+  }
+  Serial.println("LSM6DS3TR-C Found!");
 
   //reset pins
   digitalWrite(L_FWD, LOW);
@@ -179,10 +199,10 @@ void loop() {
     Serial.print(_robotY);
     Serial.print("), Direction: ");
     switch (_robotDir) {
-        case 0: Serial.println("Up"); break;
-        case 1: Serial.println("Right"); break;
-        case 2: Serial.println("Down"); break;
-        case 3: Serial.println("Left"); break;
+      case 0: Serial.println("Up"); break;
+      case 1: Serial.println("Right"); break;
+      case 2: Serial.println("Down"); break;
+      case 3: Serial.println("Left"); break;
     }
 
     // Print sensor readings
@@ -245,7 +265,16 @@ void loop() {
     Serial.println("Goal reached! Stopping robot.");
     drive(0); // Stop the robot
     setLights(0, 3, 255, 0, 0); // Set the lights to green
-    while (true); // Stop execution
+    
+    // Swap the goal and start positions
+    int tempX = _mazeGoalX;
+    int tempY = _mazeGoalY;
+    _mazeGoalX = _mazeStartX;
+    _mazeGoalY = _mazeStartY;
+    _mazeStartX = tempX;
+    _mazeStartY = tempY;
+
+    _motorSpeed = 90; // Increase the motor speed for the return trip
   }
 }
 
@@ -304,6 +333,42 @@ void updateFloodFill() {
   }
 }
 
+void turnToAngle(int angleGoalDegrees, int speed)
+{
+  float angleGoal = map(angleGoalDegrees, 0, 90, 0, -15);
+  float currentAngle = 0;
+
+  int angleScanDelay = 100;
+  int nextScanTime = millis();
+
+  if(angleGoalDegrees < 0)
+  {
+    drive(speed, -100);
+  }
+  else
+  {
+    drive(speed, 100);
+  }
+  
+  Serial.println(angleGoal);
+  while ((angleGoal > 0 && angleGoal > currentAngle) || (angleGoal < 0 && angleGoal < currentAngle))
+  {
+    if(millis() > nextScanTime)
+    {
+      sensors_event_t accel, gyro, temp;
+      lsm6ds.getEvent(&accel, &gyro, &temp);
+
+      if(abs(gyro.gyro.z) > 0.05)
+      {
+        currentAngle += gyro.gyro.z;
+      }
+      nextScanTime = millis() + angleScanDelay;
+      Serial.println(currentAngle);
+    }
+  }
+
+  drive(0);
+}
 
 void updateMazeWithSensors() {
   // Check front wall
@@ -393,7 +458,6 @@ void moveToNextCell() {
   unsigned int startLeftPulses;
   unsigned int startRightPulses;
   int targetPulses;
-  int motorSpeed = 70;
 
   Serial.print("Next Direction: ");
   Serial.println(nextDir);
@@ -404,15 +468,16 @@ void moveToNextCell() {
       // GO STRAIGHT
       break;
     case 1:
-      drive(motorSpeed, 100, 0.4);
+      turnToAngle(90, _motorSpeed * 0.75);
+      // drive(_motorSpeed, 100, 0.4);
       break;
     case 2:
-      drive(-motorSpeed, 50, 0.9);
-      drive(motorSpeed, -50, 0.9);
-      drive(-motorSpeed, 0, 0.5);
+      drive(-_motorSpeed, 50, 0.9);
+      drive(_motorSpeed, -50, 0.9);
+      drive(-_motorSpeed, 0, 0.5);
       break;
     case 3:
-      drive(motorSpeed, -100, 0.4);
+      turnToAngle(-90, _motorSpeed * 0.75);
       break;
     default:
       // HELP
@@ -424,17 +489,17 @@ void moveToNextCell() {
   {
     if(_rightDistance < 15 && _rightDistance < _leftDistance)
     {
-      followRightWall(motorSpeed);
+      followRightWall(_motorSpeed);
     }
     else if(_leftDistance < 15)
     {
-      followLeftWall(motorSpeed);
+      followLeftWall(_motorSpeed);
     }
     else
     {
       _leftDistance = getLeftDistance();
       _rightDistance = getRightDistance();
-      drive(motorSpeed);
+      drive(_motorSpeed);
     }
   }
 
@@ -551,7 +616,7 @@ void followRightWall(int speed)
   float wallDistance = getRightDistance();
   float targetDistance = 8.5; // Target distance from the wall
   float error = targetDistance - wallDistance; // The difference between the target distance and the actual distance
-  float Kp = -15.0; // Proportional gain - fine tunung value
+  float Kp = -11.5; // Proportional gain - fine tunung value
 
   // Calculate the steering adjustment based on the proportional controller
   float steerPercent = Kp * error;
@@ -566,7 +631,7 @@ void followLeftWall(int speed)
   float wallDistance = getLeftDistance();
   float targetDistance = 8.5; // Target distance from the wall
   float error = targetDistance - wallDistance; // The difference between the target distance and the actual distance
-  float Kp = 15.0; // Proportional gain - fine tunung value
+  float Kp = 11.5; // Proportional gain - fine tunung value
 
   // Calculate the steering adjustment based on the proportional controller
   float steerPercent = Kp * error;

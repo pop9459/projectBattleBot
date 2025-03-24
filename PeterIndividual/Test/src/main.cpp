@@ -1,7 +1,8 @@
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
-#include <SoftwareSerial.h>
+#include <Adafruit_LSM6DS3TRC.h>
 
+Adafruit_LSM6DS3TRC lsm6ds;
 //function definitions
 
 void leftSensorPulse();
@@ -19,6 +20,8 @@ void followRightWall(int speed);
 void followLine(int slowSpeed, int fastSpeed);
 void setGripper(int position);
 void setLights(int startIndex, int endIndex, int r, int g, int b);
+void turnToAngle(int angleGoalDegrees, int speed);
+
 
 // Motor pins
 #define L_FWD 5 // Left motor forward pin
@@ -29,7 +32,7 @@ void setLights(int startIndex, int endIndex, int r, int g, int b);
 #define R_ROT 3 // Right rotation sensor pin
 
 // LINE SENSOR PINS
-int _lineSensorPins[] = {A6, A7, A2, A3, A4, A5};
+int _lineSensorPins[] = {A6, A7, A2, A3};
 
 // Neopixel constants and definitions
 #define NEOPIXEL_PIN 4 // Neopixel pin
@@ -64,8 +67,6 @@ float _line_sensor_modifiers[] = {6, 3.5, 1.75, -1.75, -3.5, -6}; // weights for
 int _currentLeftSpeed = 0; //current speed of the left motor
 int _currentRightSpeed = 0; //current speed of the right motor
 
-SoftwareSerial BTSerial(0, 1);  // RX, TX
-
 void setup() {
   // Initialize the neopixels  
   pixels.begin();
@@ -73,7 +74,6 @@ void setup() {
 
   // Initialize serial communication for debuging
   Serial.begin(9600); 
-  BTSerial.begin(9600);  // Bluetooth module
 
   setGripper(GRIPPER_OPEN); // open the gripper
 
@@ -94,8 +94,16 @@ void setup() {
   pinMode(A1, INPUT);
   pinMode(A2, INPUT);
   pinMode(A3, INPUT);
+
+  //gyroscope pins
   pinMode(A4, INPUT);
   pinMode(A5, INPUT);
+
+  if (!lsm6ds.begin_I2C()) {
+    Serial.println("Failed to find LSM6DS3TR-C chip");
+    while (1);
+  }
+  Serial.println("LSM6DS3TR-C Found!");
 
   //reset pins
   digitalWrite(L_FWD, LOW);
@@ -110,16 +118,53 @@ void setup() {
   pinMode(FRONT_US_ECHO_PIN, INPUT);
   pinMode(LEFT_US_ECHO_PIN, INPUT);
   pinMode(RIGHT_US_ECHO_PIN, INPUT);
+
+  delay(1000);
 }
 
 void loop() {
-  Serial.print("Front Distance: ");
-  Serial.print(getDistance(FRONT_US_ECHO_PIN, FRONT_US_TRIG_PIN));
-  Serial.print(" cm, Left Distance: ");
-  Serial.print(getDistance(LEFT_US_ECHO_PIN, LEFT_US_TRIG_PIN));
-  Serial.print(" cm, Right Distance: ");
-  Serial.print(getDistance(RIGHT_US_ECHO_PIN, RIGHT_US_TRIG_PIN));
-  Serial.println(" cm");
+  turnToAngle(90, 60);
+  delay(500);
+
+  turnToAngle(-90, 60);
+  delay(500);
+}
+
+void turnToAngle(int angleGoalDegrees, int speed)
+{
+  float angleGoal = map(angleGoalDegrees, 0, 90, 0, -15);
+  float currentAngle = 0;
+
+  int angleScanDelay = 100;
+  int nextScanTime = millis();
+
+  if(angleGoalDegrees < 0)
+  {
+    drive(speed, -100);
+  }
+  else
+  {
+    drive(speed, 100);
+  }
+  
+  Serial.println(angleGoal);
+  while ((angleGoal > 0 && angleGoal > currentAngle) || (angleGoal < 0 && angleGoal < currentAngle))
+  {
+    if(millis() > nextScanTime)
+    {
+      sensors_event_t accel, gyro, temp;
+      lsm6ds.getEvent(&accel, &gyro, &temp);
+
+      if(abs(gyro.gyro.z) > 0.05)
+      {
+        currentAngle += gyro.gyro.z;
+      }
+      nextScanTime = millis() + angleScanDelay;
+      Serial.println(currentAngle);
+    }
+  }
+
+  drive(0);
 }
 
 void setLights(int startIndex, int endIndex, int r, int g, int b)
