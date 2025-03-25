@@ -3,28 +3,40 @@
 #include <Adafruit_LSM6DS3TRC.h>
 
 //function definitions
-
+// Interrupt functions
 void leftSensorPulse();
 void rightSensorPulse();
 
+// Distance measurement functions
 float getLeftDistance();
 float getRightDistance();
 float getFrontDistance();
 
+// Sensor calibration
 void calibrateSensors();
+
+// Driving and motor control
 void drive(int speedPercent, int steerPercent = 0, float numRotations = 0);
 void setMotorSpeed(int leftSpeed, int rightSpeed);
+void turnToAngle(int angleGoalDegrees, int speed, int turnAngle = 100);
+void setGripper(int position);
+
+// Maze-navigation functions
 void followRightWall(int speed);
 void followLeftWall(int speed);
-void followLine(int slowSpeed, int fastSpeed);
-void setGripper(int position);
-void setLights(int startIndex, int endIndex, int r, int g, int b);
-void turnToAngle(int angleGoalDegrees, int speed, int turnAngle = 100);
 
-void updateMazeWithSensors();
-void moveToNextCell();
-void updateFloodFill();
-void initializeMazeArray();
+// Line-following function
+void followLine(int slowSpeed, int fastSpeed);
+
+// Neopixel light control
+void setLights(int startIndex, int endIndex, int r, int g, int b);
+void RGBLights();
+
+// Main flow control functions
+void navigateMazeLeftHand();
+void navigateMazeRightHand();
+void driveIntoMaze();
+void driveOutOfMaze();
 
 // Motor pins
 #define L_FWD 5 // Left motor forward pin - A1
@@ -77,36 +89,12 @@ int _leftDistance; // Lats distance from the left ultrasonic sensor
 int _frontDistance; // Lats distance from the front ultrasonic sensor
 int _rightDistance; // Lats distance from the right ultrasonic sensor
 
-// Maze dimensions
-const int MAZE_WIDTH = 7;
-const int MAZE_HEIGHT = 3;
-int _mazeGoalX = 1; 
-int _mazeGoalY = 0;
-int _mazeStartX = 5;
-int _mazeStartY = 0;
+// Timing vars
+int _frontWallCheckDelay = 50;
+int _nextFrontWallCheck = 0;
 
-// Robot's current position and orientation
-int _robotX = _mazeStartX; // Starting X position
-int _robotY = _mazeStartY; // Starting Y position
-int _robotDir = 0; // 0 = Up, 1 = Right, 2 = Down, 3 = Left
-
-// Maze grid to store walls and distances
-struct Cell {
-  int posX;
-  int posY;
-  uint8_t floodFillDistance;
-  bool northWall;
-  bool eastWall;
-  bool southWall;
-  bool westWall;
-};
-
-Cell _mazeGrid[MAZE_HEIGHT][MAZE_WIDTH];
-
-bool _printDebug = false;
-
-int _motorSpeed = 90;
-
+// Fine tuning variables
+float _wallTargetDistance = 8.5;
 
 void setup() {
   // Initialize the neopixels  
@@ -141,9 +129,11 @@ void setup() {
   if (!lsm6ds.begin_I2C()) 
   {
     Serial.println("Failed to find LSM6DS3TR-C chip");
-    while (1);
   }
-  Serial.println("LSM6DS3TR-C Found!");
+  else
+  {
+    Serial.println("LSM6DS3TR-C Found!");
+  }
 
   //reset pins
   digitalWrite(L_FWD, LOW);
@@ -159,177 +149,102 @@ void setup() {
   pinMode(LEFT_US_ECHO_PIN, INPUT);
   pinMode(RIGHT_US_ECHO_PIN, INPUT);
 
-  // // Indicate "override movement"
-  // setLights(0, 3, 255, 165, 0); // Set the lights to orange
-
-  // // Calibrate the line sensors
-  // // This will allow the robot to get close egougth to the cone to pick it up
-  // calibrateSensors();
-  
-  // setGripper(GRIPPER_CLOSE); // Open the gripper
-
-  // delay(500); // Small delay to prevent cone bumping 
-
-  // // manually steer into the maze
-  // drive(60, 0, 0.25); // forward a bit
-  // drive(60, -35, 1); // steer left
-
-  // // follow the short line untill in a set possition
-  // int startTime = millis();
-  // while(millis() < startTime + 600)
-  // {
-  //   followLine(85, 100);
-  // }
-
-  initializeMazeArray();
+  driveIntoMaze();
 
   setLights(0, 3, 0, 255, 0); // Set the lights to green
 }
 
 void loop() {
-  // Update the maze with sensor data
-  updateMazeWithSensors();
+  RGBLights();
+  // navigateMazeLeftHand();
+}
 
-  // Debug prints
-  if(_printDebug) {
-    // Print robot's current position and direction
-    Serial.print("Robot Position: (");
-    Serial.print(_robotX);
-    Serial.print(", ");
-    Serial.print(_robotY);
-    Serial.print("), Direction: ");
-    switch (_robotDir) {
-      case 0: Serial.println("Up"); break;
-      case 1: Serial.println("Right"); break;
-      case 2: Serial.println("Down"); break;
-      case 3: Serial.println("Left"); break;
-    }
-
-    // Print sensor readings
-    Serial.print("Front Distance: ");
-    Serial.print(getFrontDistance());
-    Serial.print(" cm, Left Distance: ");
-    Serial.print(getLeftDistance());
-    Serial.print(" cm, Right Distance: ");
-    Serial.print(getRightDistance());
-    Serial.println(" cm");
-
-    // Print the entire maze grid status
-    Serial.println("Maze Grid Status:");
-    for (int y = MAZE_HEIGHT - 1; y >= 0; y--) {
-      for (int x = 0; x < MAZE_WIDTH; x++) {
-        Serial.print("(");
-        Serial.print(x);
-        Serial.print(", ");
-        Serial.print(y);
-        Serial.print("): ");
-        Serial.print(_mazeGrid[y][x].northWall ? "N" : "-");
-        Serial.print(_mazeGrid[y][x].eastWall ? "E" : "-");
-        Serial.print(_mazeGrid[y][x].southWall ? "S" : "-");
-        Serial.print(_mazeGrid[y][x].westWall ? "W" : "-");
-        Serial.print("  ");
-      }
-      Serial.println();
-    }
-
-    // Print the entire flood fill distances
-    Serial.println("Flood Fill Distances:");
-    for (int y = MAZE_HEIGHT - 1; y >= 0; y--) {
-      for (int x = 0; x < MAZE_WIDTH; x++) {
-        Serial.print("(");
-        Serial.print(x);
-        Serial.print(", ");
-        Serial.print(y);
-        Serial.print("): ");
-        Serial.print(_mazeGrid[y][x].floodFillDistance);
-        Serial.print("  ");
-      }
-      Serial.println();
-    }
-
-    // Wait for the user to press a key in the serial monitor
-    Serial.println("Press a key to continue...");
-    while (Serial.available() == 0) {
-      // Do nothing, just wait for input
-    }
-    while (Serial.available() > 0) {
-      Serial.read(); // Clear the input buffer
-    }
+void RGBLights()
+{
+  for (int i = 0; i < pixels.numPixels(); i++) {
+    int hue = (i * 256 / pixels.numPixels()) + (millis() / 10); // Calculate hue based on position and time
+    pixels.setPixelColor(i, pixels.ColorHSV(hue * 256)); // Set pixel color using HSV
   }
+  pixels.show();
+  delay(50); // Small delay to create a smooth animation
+}
+
+void navigateMazeLeftHand()
+{
+  followLeftWall(100);
   
-  // Move to the next cell
-  moveToNextCell();
-
-  // Check if the robot has reached the goal
-  if (_robotX == _mazeGoalX && _robotY == _mazeGoalY) {
-    Serial.println("Goal reached! Stopping robot.");
-    drive(0); // Stop the robot
-    setLights(0, 3, 255, 0, 0); // Set the lights to green
+  if(millis() > _nextFrontWallCheck && getFrontDistance() < 12)
+  {    
+    setLights(0, 3, 255, 165, 0); // Set the lights to orange - indicate different movement
     
-    // Swap the goal and start positions
-    int tempX = _mazeGoalX;
-    int tempY = _mazeGoalY;
-    _mazeGoalX = _mazeStartX;
-    _mazeGoalY = _mazeStartY;
-    _mazeStartX = tempX;
-    _mazeStartY = tempY;
+    //determine the type of the turn - different situations require different allignments
+    if(getRightDistance() < 15)
+    {
+      //turn around 180 degrees
+      drive(-100, 50, 0.9);
+      drive(100, -50, 0.9);
+    }
+    else
+    {
+      //turn right 90 degrees
+      drive(100, 85, 0.5);
+    }
+    
+    setLights(0, 3, 0, 255, 0); // Set the lights to green - indicate normal movement
 
-    _motorSpeed = 90; // Increase the motor speed for the return trip
+    _nextFrontWallCheck += _frontWallCheckDelay;
   }
 }
 
-void updateFloodFill() {
-  // Initialize all cells with a high distance value
-  for (int y = 0; y < MAZE_HEIGHT; y++) {
-    for (int x = 0; x < MAZE_WIDTH; x++) {
-      _mazeGrid[y][x].floodFillDistance = UINT8_MAX; // Max value (255) for uint8_t
+void navigateMazeRightHand()
+{
+  followRightWall(100);
+  
+  if(millis() > _nextFrontWallCheck && getFrontDistance() < 12)
+  {    
+    setLights(0, 3, 255, 165, 0); // Set the lights to orange - indicate different movement
+    
+    //determine the type of the turn - different situations require different allignments
+    if(getLeftDistance() < 15)
+    {
+      //turn around 180 degrees
+      drive(-100, -50, 0.9);
+      drive(100, 50, 0.9);
     }
+    else
+    {
+      //turn left 90 degrees
+      drive(100, -85, 0.5);
+    }
+
+    setLights(0, 3, 0, 255, 0); // Set the lights to green - indicate normal movement
+
+    _nextFrontWallCheck += _frontWallCheckDelay;
   }
+}
 
-  // BFS queue setup
-  const int MAX_QUEUE_SIZE = MAZE_WIDTH * MAZE_HEIGHT;
-  int queueX[MAX_QUEUE_SIZE];
-  int queueY[MAX_QUEUE_SIZE];
-  int front = 0, rear = 0;
+void driveIntoMaze()
+{
+  // Indicate "override movement"
+  setLights(0, 3, 255, 165, 0); // Set the lights to orange
 
-  // Add the goal cell to the queue
-  queueX[rear] = _mazeGoalX;
-  queueY[rear] = _mazeGoalY;
-  rear++;
-  _mazeGrid[_mazeGoalY][_mazeGoalX].floodFillDistance = 0;
+  // Calibrate the line sensors
+  // This will allow the robot to get close egougth to the cone to pick it up
+  calibrateSensors();
+  
+  setGripper(GRIPPER_CLOSE); // Open the gripper
 
-  // BFS loop
-  while (front < rear) {
-    int x = queueX[front];
-    int y = queueY[front];
-    int dist = _mazeGrid[y][x].floodFillDistance;
-    front++;
+  delay(500); // Small delay to prevent cone bumping 
 
-    // Check all four directions
-    if (!_mazeGrid[y][x].northWall && _mazeGrid[y + 1][x].floodFillDistance == UINT8_MAX) {
-      _mazeGrid[y + 1][x].floodFillDistance = dist + 1;
-      queueX[rear] = x;
-      queueY[rear] = y + 1;
-      rear++;
-    }
-    if (!_mazeGrid[y][x].eastWall && _mazeGrid[y][x + 1].floodFillDistance == UINT8_MAX) {
-      _mazeGrid[y][x + 1].floodFillDistance = dist + 1;
-      queueX[rear] = x + 1;
-      queueY[rear] = y;
-      rear++;
-    }
-    if (!_mazeGrid[y][x].southWall && _mazeGrid[y - 1][x].floodFillDistance == UINT8_MAX) {
-      _mazeGrid[y - 1][x].floodFillDistance = dist + 1;
-      queueX[rear] = x;
-      queueY[rear] = y - 1;
-      rear++;
-    }
-    if (!_mazeGrid[y][x].westWall && _mazeGrid[y][x - 1].floodFillDistance == UINT8_MAX) {
-      _mazeGrid[y][x - 1].floodFillDistance = dist + 1;
-      queueX[rear] = x - 1;
-      queueY[rear] = y;
-      rear++;
-    }
+  // manually steer into the maze
+  drive(60, 0, 0.25); // forward a bit
+  drive(60, -35, 1); // steer left
+
+  // follow the short line untill in a set possition
+  int startTime = millis();
+  while(millis() < startTime + 600)
+  {
+    followLine(85, 100);
   }
 }
 
@@ -368,197 +283,6 @@ void turnToAngle(int angleGoalDegrees, int speed, int turnAngle = 100)
   }
 
   drive(0);
-}
-
-void updateMazeWithSensors() {
-  // Check front wall
-  if (getFrontDistance() < 12) {
-    if (_robotDir == 0)
-    {
-      _mazeGrid[_robotY][_robotX].northWall = true; // Facing North
-      _mazeGrid[_robotY+1][_robotX].southWall = true; 
-    } 
-    else if (_robotDir == 1)
-    {
-      _mazeGrid[_robotY][_robotX].eastWall = true; // Facing East
-      _mazeGrid[_robotY][_robotX+1].westWall = true;
-    } 
-    else if (_robotDir == 2)
-    {
-      _mazeGrid[_robotY][_robotX].southWall = true; // Facing South
-      _mazeGrid[_robotY-1][_robotX].northWall = true;
-    } 
-    else if (_robotDir == 3)
-    {
-      _mazeGrid[_robotY][_robotX].westWall = true; // Facing West
-      _mazeGrid[_robotY][_robotX-1].eastWall = true;
-    } 
-  }
-
-  // Check left wall
-  if (getLeftDistance() < 15) {
-    if (_robotDir == 0) {
-      _mazeGrid[_robotY][_robotX].westWall = true; // Facing North
-      _mazeGrid[_robotY][_robotX - 1].eastWall = true;
-    } else if (_robotDir == 1) {
-      _mazeGrid[_robotY][_robotX].northWall = true; // Facing East
-      _mazeGrid[_robotY + 1][_robotX].southWall = true;
-    } else if (_robotDir == 2) {
-      _mazeGrid[_robotY][_robotX].eastWall = true; // Facing South
-      _mazeGrid[_robotY][_robotX + 1].westWall = true;
-    } else if (_robotDir == 3) {
-      _mazeGrid[_robotY][_robotX].southWall = true; // Facing West
-      _mazeGrid[_robotY - 1][_robotX].northWall = true;
-    }
-  }
-
-  // Check right wall
-  if (getRightDistance() < 15) {
-    if (_robotDir == 0) {
-      _mazeGrid[_robotY][_robotX].eastWall = true; // Facing North
-      _mazeGrid[_robotY][_robotX + 1].westWall = true;
-    } else if (_robotDir == 1) {
-      _mazeGrid[_robotY][_robotX].southWall = true; // Facing East
-      _mazeGrid[_robotY - 1][_robotX].northWall = true;
-    } else if (_robotDir == 2) {
-      _mazeGrid[_robotY][_robotX].westWall = true; // Facing South
-      _mazeGrid[_robotY][_robotX - 1].eastWall = true;
-    } else if (_robotDir == 3) {
-      _mazeGrid[_robotY][_robotX].northWall = true; // Facing West
-      _mazeGrid[_robotY + 1][_robotX].southWall = true;
-    }
-  }
-
-  updateFloodFill();
-}
-
-void moveToNextCell() {
-  int minDistance = INT8_MAX;
-  int nextDir = _robotDir;
-
-  // Check neighboring cells based on walls
-  if (!_mazeGrid[_robotY][_robotX].northWall && _robotY < MAZE_HEIGHT - 1 && _mazeGrid[_robotY + 1][_robotX].floodFillDistance < minDistance) {
-    minDistance = _mazeGrid[_robotY + 1][_robotX].floodFillDistance;
-    nextDir = 0; // North
-  }
-  if (!_mazeGrid[_robotY][_robotX].eastWall && _robotX < MAZE_WIDTH - 1 && _mazeGrid[_robotY][_robotX + 1].floodFillDistance < minDistance) {
-    minDistance = _mazeGrid[_robotY][_robotX + 1].floodFillDistance;
-    nextDir = 1; // East
-  }
-  if (!_mazeGrid[_robotY][_robotX].southWall && _robotY > 0 && _mazeGrid[_robotY - 1][_robotX].floodFillDistance < minDistance) {
-    minDistance = _mazeGrid[_robotY - 1][_robotX].floodFillDistance;
-    nextDir = 2; // South
-  }
-  if (!_mazeGrid[_robotY][_robotX].westWall && _robotX > 0 && _mazeGrid[_robotY][_robotX - 1].floodFillDistance < minDistance) {
-    minDistance = _mazeGrid[_robotY][_robotX - 1].floodFillDistance;
-    nextDir = 3; // West
-  }
-
-  int turnAngle = (nextDir - _robotDir + 4) % 4;
-  unsigned int startLeftPulses;
-  unsigned int startRightPulses;
-  int targetPulses;
-
-  Serial.print("Next Direction: ");
-  Serial.println(nextDir);
-
-  switch (turnAngle)
-  {
-    case 0:
-      // GO STRAIGHT
-      break;
-    case 1:
-      turnToAngle(90, _motorSpeed * 0.75);
-      // drive(_motorSpeed, 100, 0.4);
-      break;
-    case 2:
-      turnToAngle(-90, -_motorSpeed * 0.75, -50);
-      turnToAngle(-90, _motorSpeed * 0.75, 50);
-
-      drive(-_motorSpeed, 0, 0.65);
-      break;
-    case 3:
-      turnToAngle(-90, _motorSpeed * 0.75);
-      break;
-    default:
-      // HELP
-      break;
-  } 
-  
-  targetPulses = _leftPulses + 28;
-  while (_leftPulses < targetPulses && getFrontDistance() > 7.5) 
-  {
-    if(_rightDistance < 15 && _rightDistance < _leftDistance)
-    {
-      followRightWall(_motorSpeed);
-    }
-    else if(_leftDistance < 15)
-    {
-      followLeftWall(_motorSpeed);
-    }
-    else
-    {
-      _leftDistance = getLeftDistance();
-      _rightDistance = getRightDistance();
-      drive(_motorSpeed);
-    }
-  }
-
-  drive(0);
-  _robotDir = nextDir;  
-
-  // Update robot position
-  if (_robotDir == 0) _robotY++;
-  else if (_robotDir == 1) _robotX++;
-  else if (_robotDir == 2) _robotY--;
-  else if (_robotDir == 3) _robotX--;
-}
-
-void initializeMazeArray()
-{
-  for (int y = 0; y < MAZE_HEIGHT; y++) {
-    for (int x = 0; x < MAZE_WIDTH; x++) {
-      _mazeGrid[y][x].posX = x;
-      _mazeGrid[y][x].posY = y;
-      _mazeGrid[y][x].floodFillDistance = UINT8_MAX;
-      
-      if (x == 0)
-      {
-        _mazeGrid[y][x].westWall = true;
-      } 
-      else
-      {
-        _mazeGrid[y][x].westWall = false;
-      }
-
-      if (x == MAZE_WIDTH - 1)
-      {
-        _mazeGrid[y][x].eastWall = true;
-      }
-      else
-      {
-        _mazeGrid[y][x].eastWall = false;
-      } 
-
-      if (y == 0)
-      {
-        _mazeGrid[y][x].southWall = true;
-      }
-      else
-      {
-        _mazeGrid[y][x].southWall = false;
-      } 
-
-      if (y == MAZE_HEIGHT - 1)
-      {
-        _mazeGrid[y][x].northWall = true;
-      }
-      else
-      {
-        _mazeGrid[y][x].northWall = false;
-      } 
-    }
-  } 
 }
 
 void setLights(int startIndex, int endIndex, int r, int g, int b)
