@@ -104,7 +104,7 @@ void setup() {
   // Initialize serial communication for debuging
   Serial.begin(9600); 
 
-  // setGripper(GRIPPER_OPEN); // open the gripper
+  setGripper(GRIPPER_OPEN); // open the gripper
 
   //begin the interrupt functions to count the rotations
   attachInterrupt(digitalPinToInterrupt(L_ROT), leftSensorPulse, RISING);
@@ -156,17 +156,24 @@ void setup() {
 
 void loop() {
   RGBLights();
-  // navigateMazeLeftHand();
+  navigateMazeRightHand();
 }
 
 void RGBLights()
 {
-  for (int i = 0; i < pixels.numPixels(); i++) {
-    int hue = (i * 256 / pixels.numPixels()) + (millis() / 10); // Calculate hue based on position and time
-    pixels.setPixelColor(i, pixels.ColorHSV(hue * 256)); // Set pixel color using HSV
+  float f = 0.3f;  // Frequency in Hz
+  float t = millis() / 1000.0;  // Convert millis to seconds
+
+  for(int i = 0; i < 4; i++)
+  {
+    byte r = int(255 * abs(2 * fmod(t * f + ((float)(i * 0.25f) + 1.0)/3, 1) - 1));          // Main wave
+    byte g = int(255 * abs(2 * fmod(t * f + ((float)(i * 0.25f) + 2.0)/3, 1) - 1));  // 120° phase shift
+    byte b = int(255 * abs(2 * fmod(t * f + ((float)(i * 0.25f) + 3.0)/3, 1) - 1));  // 240° phase shift
+
+    pixels.setPixelColor(i, pixels.Color(r, g, b));
   }
+
   pixels.show();
-  delay(50); // Small delay to create a smooth animation
 }
 
 void navigateMazeLeftHand()
