@@ -19,7 +19,7 @@ void followLeftWall(int speed);
 void followLine(int slowSpeed, int fastSpeed);
 void setGripper(int position);
 void setLights(int startIndex, int endIndex, int r, int g, int b);
-void turnToAngle(int angleGoalDegrees, int speed);
+void turnToAngle(int angleGoalDegrees, int speed, int turnAngle = 100);
 
 void updateMazeWithSensors();
 void moveToNextCell();
@@ -80,9 +80,9 @@ int _rightDistance; // Lats distance from the right ultrasonic sensor
 // Maze dimensions
 const int MAZE_WIDTH = 7;
 const int MAZE_HEIGHT = 3;
-int _mazeGoalX = 5; 
+int _mazeGoalX = 1; 
 int _mazeGoalY = 0;
-int _mazeStartX = 1;
+int _mazeStartX = 5;
 int _mazeStartY = 0;
 
 // Robot's current position and orientation
@@ -105,7 +105,7 @@ Cell _mazeGrid[MAZE_HEIGHT][MAZE_WIDTH];
 
 bool _printDebug = false;
 
-int _motorSpeed = 80;
+int _motorSpeed = 90;
 
 
 void setup() {
@@ -333,7 +333,7 @@ void updateFloodFill() {
   }
 }
 
-void turnToAngle(int angleGoalDegrees, int speed)
+void turnToAngle(int angleGoalDegrees, int speed, int turnAngle = 100)
 {
   float angleGoal = map(angleGoalDegrees, 0, 90, 0, -15);
   float currentAngle = 0;
@@ -343,11 +343,11 @@ void turnToAngle(int angleGoalDegrees, int speed)
 
   if(angleGoalDegrees < 0)
   {
-    drive(speed, -100);
+    drive(speed, -turnAngle);
   }
   else
   {
-    drive(speed, 100);
+    drive(speed, turnAngle);
   }
   
   Serial.println(angleGoal);
@@ -472,9 +472,10 @@ void moveToNextCell() {
       // drive(_motorSpeed, 100, 0.4);
       break;
     case 2:
-      drive(-_motorSpeed, 50, 0.9);
-      drive(_motorSpeed, -50, 0.9);
-      drive(-_motorSpeed, 0, 0.5);
+      turnToAngle(-90, -_motorSpeed * 0.75, -50);
+      turnToAngle(-90, _motorSpeed * 0.75, 50);
+
+      drive(-_motorSpeed, 0, 0.65);
       break;
     case 3:
       turnToAngle(-90, _motorSpeed * 0.75);
@@ -616,13 +617,13 @@ void followRightWall(int speed)
   float wallDistance = getRightDistance();
   float targetDistance = 8.5; // Target distance from the wall
   float error = targetDistance - wallDistance; // The difference between the target distance and the actual distance
-  float Kp = -11.5; // Proportional gain - fine tunung value
+  float Kp = -15; // Proportional gain - fine tunung value
 
   // Calculate the steering adjustment based on the proportional controller
   float steerPercent = Kp * error;
 
   // Drive the robot with the calculated steering adjustment
-  steerPercent = constrain(steerPercent, -33, 33);
+  steerPercent = constrain(steerPercent, -35, 35);
   drive(speed, steerPercent);
 }
 
@@ -631,13 +632,13 @@ void followLeftWall(int speed)
   float wallDistance = getLeftDistance();
   float targetDistance = 8.5; // Target distance from the wall
   float error = targetDistance - wallDistance; // The difference between the target distance and the actual distance
-  float Kp = 11.5; // Proportional gain - fine tunung value
+  float Kp = 15; // Proportional gain - fine tunung value
 
   // Calculate the steering adjustment based on the proportional controller
   float steerPercent = Kp * error;
 
   // Drive the robot with the calculated steering adjustment
-  steerPercent = constrain(steerPercent, -33, 33);
+  steerPercent = constrain(steerPercent, -35, 35);
   drive(speed, steerPercent);
 }
 
