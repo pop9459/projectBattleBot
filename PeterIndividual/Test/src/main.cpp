@@ -1,38 +1,52 @@
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
-#include <Adafruit_LSM6DS3TRC.h>
 
-Adafruit_LSM6DS3TRC lsm6ds;
 //function definitions
-
+// Interrupt functions
 void leftSensorPulse();
 void rightSensorPulse();
 
-float getRpmLeft();
-float getRpmRight();
+// Sensor functuions
+float getLeftDistance();
+float getRightDistance();
+float getFrontDistance();
+bool allSensorsBlack();
+bool anySensorBlack();
 
-float getDistance(int echoPin, int triggerPin);
-
-void calibrateSensors();
+// Driving and motor control
 void drive(int speedPercent, int steerPercent = 0, float numRotations = 0);
 void setMotorSpeed(int leftSpeed, int rightSpeed);
-void followRightWall(int speed);
-void followLine(int slowSpeed, int fastSpeed);
+void turnToAngle(int angleGoalDegrees, int speed, int turnAngle = 100);
 void setGripper(int position);
-void setLights(int startIndex, int endIndex, int r, int g, int b);
-void turnToAngle(int angleGoalDegrees, int speed);
 
+// Maze-navigation functions
+void followRightWall(int speed);
+void followLeftWall(int speed);
+
+// Line-following function
+void followLine(int slowSpeed, int fastSpeed);
+
+// Neopixel light control
+void setLights(int startIndex, int endIndex, int r, int g, int b);
+void RGBLights();
+
+// Main flow control functions
+void calibrateSensors();
+void navigateMazeLeftHand();
+void navigateMazeRightHand();
+void driveIntoMaze();
+void driveOutOfMaze();
 
 // Motor pins
-#define L_FWD 5 // Left motor forward pin
-#define R_FWD 9 // Right motor forward pin
-#define L_BWD 6 // Left motor backward pin
-#define R_BWD 10 // Right motor backward pin
-#define L_ROT 2 // Left rotation sensor pin
-#define R_ROT 3 // Right rotation sensor pin
+#define L_FWD 5 // Left motor forward pin - A1
+#define R_FWD 9 // Right motor forward pin - B1
+#define L_BWD 6 // Left motor backward pin - A2
+#define R_BWD 10 // Right motor backward pin - B2
+#define L_ROT 2 // Left rotation sensor pin - R1
+#define R_ROT 3 // Right rotation sensor pin -R2
 
 // LINE SENSOR PINS
-int _lineSensorPins[] = {A6, A7, A2, A3};
+int _lineSensorPins[] = {A6, A7, A2, A3, A4, A5};
 
 // Neopixel constants and definitions
 #define NEOPIXEL_PIN 4 // Neopixel pin
@@ -48,7 +62,7 @@ Adafruit_NeoPixel pixels = Adafruit_NeoPixel(4, NEOPIXEL_PIN, NEO_RGB + NEO_KHZ8
 
 // Gripper constants
 #define GRIPPER_PIN 11 // Gripper servo pin
-#define GRIPPER_OPEN 110 // Gripper open position
+#define GRIPPER_OPEN 100 // Gripper open position
 #define GRIPPER_CLOSE 40 // Gripper close position
 
 // Driving constants
@@ -66,6 +80,17 @@ float _line_sensor_modifiers[] = {6, 3.5, 1.75, -1.75, -3.5, -6}; // weights for
 
 int _currentLeftSpeed = 0; //current speed of the left motor
 int _currentRightSpeed = 0; //current speed of the right motor
+
+int _leftDistance; // Lats distance from the left ultrasonic sensor
+int _frontDistance; // Lats distance from the front ultrasonic sensor
+int _rightDistance; // Lats distance from the right ultrasonic sensor
+
+// Timing vars
+int _frontWallCheckDelay = 50;
+int _nextFrontWallCheck = 0;
+
+// Fine tuning variables
+float _wallTargetDistance = 8.5;
 
 void setup() {
   // Initialize the neopixels  
@@ -89,21 +114,10 @@ void setup() {
   pinMode(L_ROT, INPUT);
   pinMode(R_ROT, INPUT);
 
-  //set the line sensor pins
-  pinMode(A0, INPUT);
-  pinMode(A1, INPUT);
-  pinMode(A2, INPUT);
-  pinMode(A3, INPUT);
-
-  //gyroscope pins
-  pinMode(A4, INPUT);
-  pinMode(A5, INPUT);
-
-  if (!lsm6ds.begin_I2C()) {
-    Serial.println("Failed to find LSM6DS3TR-C chip");
-    while (1);
+  // Set the line sensor pins using a for loop
+  for (int i = 0; i < 4; i++) {
+    pinMode(_lineSensorPins[i], INPUT);
   }
-  Serial.println("LSM6DS3TR-C Found!");
 
   //reset pins
   digitalWrite(L_FWD, LOW);
@@ -119,18 +133,183 @@ void setup() {
   pinMode(LEFT_US_ECHO_PIN, INPUT);
   pinMode(RIGHT_US_ECHO_PIN, INPUT);
 
-  delay(1000);
+  driveIntoMaze();
+
+  setLights(0, 3, 0, 255, 0); // Set the lights to green
 }
 
 void loop() {
-  turnToAngle(90, 60);
-  delay(500);
+  drive(0);
+  while (true)
+  {
+    for (int i = 0; i < sizeof(_lineSensorPins); i++) {
+      int sensorValue = analogRead(_lineSensorPins[i]);
+      Serial.print(" Sensor ");
+      Serial.print(i);
+      Serial.print(": ");
+      Serial.print(sensorValue);
+    }
 
-  turnToAngle(-90, 60);
-  delay(500);
+    Serial.println();
+    delay(500); // Add a delay to avoid flooding the serial monitor
+  }
+  
+
+  bool lineDetected = false;
+  bool checkpointDetected = false;
+  unsigned int lightUpdateDelay = 100;
+  unsigned int nextLightUpdate = millis();
+  unsigned int checkpointUpdateDelay = 1000;
+  unsigned int nextCheckpointUpdate = millis() + 10000;
+
+  while (!lineDetected)
+  {
+    navigateMazeRightHand();
+
+    if(millis() > nextLightUpdate)
+    {
+      RGBLights();
+      nextLightUpdate = millis() + lightUpdateDelay;
+    }
+
+    if(millis() > nextCheckpointUpdate)
+    {
+      checkpointDetected = anySensorBlack();
+      nextCheckpointUpdate = millis() + checkpointUpdateDelay;
+    }
+  }
+
+  drive(0);
+  while (true)
+  {
+    setLights(0, 3, 255, 0, 0); // Set the lights to red
+    delay(2000);
+    setLights(0, 3, 0, 0, 0); // Set the lights to red
+    delay(2000);
+  }
 }
 
-void turnToAngle(int angleGoalDegrees, int speed)
+void RGBLights()
+{
+  float f = 0.3f;  // Frequency in Hz
+  float t = millis() / 1000.0;  // Convert millis to seconds
+
+  for(int i = 0; i < 4; i++)
+  {
+    byte r = int(255 * abs(2 * fmod(t * f + ((float)(i * 0.25f) + 1.0)/3, 1) - 1));  // Main wave
+    byte g = int(255 * abs(2 * fmod(t * f + ((float)(i * 0.25f) + 2.0)/3, 1) - 1));  // 120° phase shift
+    byte b = int(255 * abs(2 * fmod(t * f + ((float)(i * 0.25f) + 3.0)/3, 1) - 1));  // 240° phase shift
+
+    pixels.setPixelColor(i, pixels.Color(r, g, b));
+  }
+
+  pixels.show();
+}
+
+bool allSensorsBlack()
+{
+  for(int i = 0; i < sizeof(_lineSensorPins); i++)
+  {
+    if(analogRead(_lineSensorPins[i]) < _lineTresholds[i])
+    {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool anySensorBlack()
+{
+  for(int i = 0; i < sizeof(_lineSensorPins); i++)
+  {
+    if(analogRead(_lineSensorPins[i]) > _lineTresholds[i])
+    {
+      return true;
+    }
+  }
+  return false;
+}
+
+void navigateMazeLeftHand()
+{
+  followLeftWall(100);
+  
+  if(millis() > _nextFrontWallCheck && getFrontDistance() < 12)
+  {    
+    setLights(0, 3, 255, 165, 0); // Set the lights to orange - indicate different movement
+    
+    //determine the type of the turn - different situations require different allignments
+    if(getRightDistance() < 15)
+    {
+      //turn around 180 degrees
+      drive(-100, 50, 0.9);
+      drive(100, -50, 0.9);
+    }
+    else
+    {
+      //turn right 90 degrees
+      drive(100, 85, 0.5);
+    }
+    
+    setLights(0, 3, 0, 255, 0); // Set the lights to green - indicate normal movement
+
+    _nextFrontWallCheck += _frontWallCheckDelay;
+  }
+}
+
+void navigateMazeRightHand()
+{
+  followRightWall(100);
+  
+  if(millis() > _nextFrontWallCheck && getFrontDistance() < 12)
+  {    
+    setLights(0, 3, 255, 165, 0); // Set the lights to orange - indicate different movement
+    
+    //determine the type of the turn - different situations require different allignments
+    if(getLeftDistance() < 15)
+    {
+      //turn around 180 degrees
+      drive(-100, -50, 0.9);
+      drive(100, 50, 0.9);
+    }
+    else
+    {
+      //turn left 90 degrees
+      drive(100, -85, 0.5);
+    }
+
+    setLights(0, 3, 0, 255, 0); // Set the lights to green - indicate normal movement
+
+    _nextFrontWallCheck += _frontWallCheckDelay;
+  }
+}
+
+void driveIntoMaze()
+{
+  // Indicate "override movement"
+  setLights(0, 3, 255, 165, 0); // Set the lights to orange
+
+  // Calibrate the line sensors
+  // This will allow the robot to get close egougth to the cone to pick it up
+  calibrateSensors();
+  
+  setGripper(GRIPPER_CLOSE); // Open the gripper
+
+  delay(500); // Small delay to prevent cone bumping 
+
+  // manually steer into the maze
+  drive(60, 0, 0.25); // forward a bit
+  drive(60, -35, 1); // steer left
+
+  // follow the short line untill in a set possition
+  int startTime = millis();
+  while(millis() < startTime + 600)
+  {
+    followLine(85, 100);
+  }
+}
+
+void turnToAngle(int angleGoalDegrees, int speed, int turnAngle = 100)
 {
   float angleGoal = map(angleGoalDegrees, 0, 90, 0, -15);
   float currentAngle = 0;
@@ -140,11 +319,11 @@ void turnToAngle(int angleGoalDegrees, int speed)
 
   if(angleGoalDegrees < 0)
   {
-    drive(speed, -100);
+    drive(speed, -turnAngle);
   }
   else
   {
-    drive(speed, 100);
+    drive(speed, turnAngle);
   }
   
   Serial.println(angleGoal);
@@ -220,10 +399,10 @@ void followLine(int slowSpeed, int fastSpeed)
 
 void followRightWall(int speed)
 {
-  float distance = getDistance(RIGHT_US_ECHO_PIN, RIGHT_US_TRIG_PIN);
-  float targetDistance = 8; // Target distance from the wall
-  float error = targetDistance - distance; // The difference between the target distance and the actual distance
-  float Kp = -10.0; // Proportional gain - fine tunung value
+  float wallDistance = getRightDistance();
+  float targetDistance = 8.5; // Target distance from the wall
+  float error = targetDistance - wallDistance; // The difference between the target distance and the actual distance
+  float Kp = -15; // Proportional gain - fine tunung value
 
   // Calculate the steering adjustment based on the proportional controller
   float steerPercent = Kp * error;
@@ -231,33 +410,21 @@ void followRightWall(int speed)
   // Drive the robot with the calculated steering adjustment
   steerPercent = constrain(steerPercent, -35, 35);
   drive(speed, steerPercent);
-  
-  float frontDistance = getDistance(FRONT_US_ECHO_PIN, FRONT_US_TRIG_PIN);
-  if(frontDistance < 12)
-  {
-    drive(0);
-    delay(1000);
-    Serial.println(getDistance(LEFT_US_ECHO_PIN, LEFT_US_TRIG_PIN));
-    while (true)
-    {
-      /* code */
-    }
-    
-    setLights(0, 3, 255, 165, 0); // Set the lights to orange - indicate different movement
-    //determine the type of the turn - different situations require different allignments
-    if(getDistance(LEFT_US_ECHO_PIN, LEFT_US_TRIG_PIN) < 15)
-    {
-      //turn around 180 degrees
-      drive(-100, 50, 0.9);
-      drive(100, -50, 0.9);
-    }
-    else
-    {
-      //turn right 90 degrees
-      drive(-100, 85, 0.5);
-    }
-    setLights(0, 3, 0, 255, 0); // Set the lights to green - indicate normal movement
-  }
+}
+
+void followLeftWall(int speed)
+{
+  float wallDistance = getLeftDistance();
+  float targetDistance = 8.5; // Target distance from the wall
+  float error = targetDistance - wallDistance; // The difference between the target distance and the actual distance
+  float Kp = 15; // Proportional gain - fine tunung value
+
+  // Calculate the steering adjustment based on the proportional controller
+  float steerPercent = Kp * error;
+
+  // Drive the robot with the calculated steering adjustment
+  steerPercent = constrain(steerPercent, -35, 35);
+  drive(speed, steerPercent);
 }
 
 // Function used for calculating the error of each of the line sensors
@@ -265,7 +432,7 @@ void followRightWall(int speed)
 void calibrateSensors()
 {
   int startTime = millis(); //mark the starting time
-  int calibrationTime = 1350; //calibrate for 3 seconds
+  int calibrationTime = 1350; //calibrate for this amount of tiems
   drive(55); //start slowly creeping forward
   
   // Drive over a small distance and mark the brightest and dimmest values for each sensor
@@ -287,19 +454,63 @@ void calibrateSensors()
   }
 }
 
-// Function for retrieving the distance from the ultrasonic sensor
+// Function for retrieving the distance from the left ultrasonic sensor
 // This function sends a pulse to the ultrasonic sensor and measures the time it takes for the echo to return
 // Based on the speed of sound the distance is calculated
-float getDistance(int echoPin, int triggerPin)
+float getLeftDistance()
 {
-  digitalWrite(triggerPin, LOW);
+  digitalWrite(LEFT_US_TRIG_PIN, LOW);
   delayMicroseconds(2);
-  digitalWrite(triggerPin, HIGH);
+  digitalWrite(LEFT_US_TRIG_PIN, HIGH);
   delayMicroseconds(10);
-  digitalWrite(triggerPin, LOW);
+  digitalWrite(LEFT_US_TRIG_PIN, LOW);
 
-  float duration = pulseIn(echoPin, HIGH);
+  float duration = pulseIn(LEFT_US_ECHO_PIN, HIGH);
   float distance = duration * 0.034 / 2;
+
+  _leftDistance = distance;
+
+  delay(25); // Delay to prevent interference between measurements
+
+  return distance;
+}
+
+// Function for retrieving the distance from the right ultrasonic sensor
+// This function sends a pulse to the ultrasonic sensor and measures the time it takes for the echo to return
+// Based on the speed of sound the distance is calculated
+float getRightDistance()
+{
+  digitalWrite(RIGHT_US_TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(RIGHT_US_TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(RIGHT_US_TRIG_PIN, LOW);
+
+  float duration = pulseIn(RIGHT_US_ECHO_PIN, HIGH);
+  float distance = duration * 0.034 / 2;
+
+  _rightDistance = distance;
+
+  delay(25); // Delay to prevent interference between measurements
+
+  return distance;
+}
+
+// Function for retrieving the distance from the left ultrasonic sensor
+// This function sends a pulse to the ultrasonic sensor and measures the time it takes for the echo to return
+// Based on the speed of sound the distance is calculated
+float getFrontDistance()
+{
+  digitalWrite(FRONT_US_TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(FRONT_US_TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(FRONT_US_TRIG_PIN, LOW);
+
+  float duration = pulseIn(FRONT_US_ECHO_PIN, HIGH);
+  float distance = duration * 0.034 / 2;
+
+  _frontDistance = distance;
 
   delay(25); // Delay to prevent interference between measurements
 
@@ -346,7 +557,7 @@ void setMotorSpeed(int leftSpeed, int rightSpeed)
   // Constrain the values to prevent errors
   leftSpeed = constrain(leftSpeed, -255, 255);
   rightSpeed = constrain(rightSpeed, -255, 255);
- 
+
   // Determine which pins to power based on the direction
   int leftToDisable;
   int rightToDisable;

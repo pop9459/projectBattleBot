@@ -1,19 +1,17 @@
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
-#include <Adafruit_LSM6DS3TRC.h>
 
 //function definitions
 // Interrupt functions
 void leftSensorPulse();
 void rightSensorPulse();
 
-// Distance measurement functions
+// Sensor functuions
 float getLeftDistance();
 float getRightDistance();
 float getFrontDistance();
-
-// Sensor calibration
-void calibrateSensors();
+bool allSensorsBlack();
+bool anySensorBlack();
 
 // Driving and motor control
 void drive(int speedPercent, int steerPercent = 0, float numRotations = 0);
@@ -33,6 +31,7 @@ void setLights(int startIndex, int endIndex, int r, int g, int b);
 void RGBLights();
 
 // Main flow control functions
+void calibrateSensors();
 void navigateMazeLeftHand();
 void navigateMazeRightHand();
 void driveIntoMaze();
@@ -47,14 +46,12 @@ void driveOutOfMaze();
 #define R_ROT 3 // Right rotation sensor pin -R2
 
 // LINE SENSOR PINS
-int _lineSensorPins[] = {A6, A7, A2, A3};
+int _lineSensorPins[] = {A6, A7, A2, A3, A4, A5};
+int _numLineSensors = 6;
 
 // Neopixel constants and definitions
 #define NEOPIXEL_PIN 4 // Neopixel pin
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(4, NEOPIXEL_PIN, NEO_RGB + NEO_KHZ800);
-
-// Gyroscope object
-Adafruit_LSM6DS3TRC lsm6ds;
 
 // Ultrasonic sensor pins
 #define FRONT_US_TRIG_PIN 12 // Ultrasonic sensor trigger pin
@@ -99,12 +96,9 @@ float _wallTargetDistance = 8.5;
 void setup() {
   // Initialize the neopixels  
   pixels.begin();
-  setLights(0, 3, 255, 0, 0); // Set the lights to blue
 
   // Initialize serial communication for debuging
   Serial.begin(9600); 
-
-  setGripper(GRIPPER_OPEN); // open the gripper
 
   //begin the interrupt functions to count the rotations
   attachInterrupt(digitalPinToInterrupt(L_ROT), leftSensorPulse, RISING);
@@ -119,20 +113,8 @@ void setup() {
   pinMode(R_ROT, INPUT);
 
   // Set the line sensor pins using a for loop
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < 6; i++) {
     pinMode(_lineSensorPins[i], INPUT);
-  }
-
-  //gyroscope pins
-  pinMode(A4, INPUT);
-  pinMode(A5, INPUT);
-  if (!lsm6ds.begin_I2C()) 
-  {
-    Serial.println("Failed to find LSM6DS3TR-C chip");
-  }
-  else
-  {
-    Serial.println("LSM6DS3TR-C Found!");
   }
 
   //reset pins
@@ -149,14 +131,87 @@ void setup() {
   pinMode(LEFT_US_ECHO_PIN, INPUT);
   pinMode(RIGHT_US_ECHO_PIN, INPUT);
 
-  driveIntoMaze();
+  setLights(0, 3, 255, 0, 0); // Set the lights to blue
 
-  setLights(0, 3, 0, 255, 0); // Set the lights to green
+  while (getFrontDistance() > 15)
+  {
+    setGripper(GRIPPER_OPEN); // Ensure the gripper is open
+    delay(100);
+    // Wait for previous robot
+  }
+  
+  delay(1000); // Wait for the previus robot to leave
+
+
+  driveIntoMaze();
 }
 
 void loop() {
-  RGBLights();
-  navigateMazeRightHand();
+  drive(0);
+  while (false)
+  {
+    for (int i = 0; i < 6; i++) {
+      int sensorValue = analogRead(_lineSensorPins[i]);
+      Serial.print(" Sensor ");
+      Serial.print(i);
+      Serial.print(": ");
+      Serial.print(sensorValue);
+      Serial.print("/");
+      Serial.print(_lineTresholds[i]);
+    }
+
+    Serial.println();
+  }
+  
+  bool lineDetected = false;
+  bool checkpointDetected = false;
+  unsigned int lightUpdateDelay = 50;
+  unsigned int nextLightUpdate = millis();
+  unsigned int checkpointUpdateDelay = 100;
+  unsigned int nextCheckpointUpdate = millis() + 5000;
+
+  // Navigate the maze using the left hand rule
+  while (!lineDetected)
+  {
+    navigateMazeRightHand();
+
+    if(millis() > nextLightUpdate)
+    {
+      RGBLights();
+      nextLightUpdate = millis() + lightUpdateDelay;
+    }
+
+    if(millis() > nextCheckpointUpdate)
+    {
+      lineDetected = anySensorBlack();
+      nextCheckpointUpdate = millis() + checkpointUpdateDelay;
+    }
+  }
+
+  setLights(0, 3, 0, 0, 255); // Set the lights to green
+
+  // Drive out of the maze following the black line
+  while (!checkpointDetected)
+  {
+    followLine(80, 100);
+
+    if(millis() > nextCheckpointUpdate)
+    {
+      checkpointDetected = allSensorsBlack();
+      nextCheckpointUpdate = millis() + checkpointUpdateDelay;
+    }
+  }
+
+
+  drive(0);
+  while (true)
+  {
+    setGripper(GRIPPER_OPEN);
+    setLights(0, 3, 255, 0, 0); // Set the lights to red
+    delay(1000);
+    setLights(0, 3, 0, 0, 0); // Set the lights to off
+    delay(1000);
+  }
 }
 
 void RGBLights()
@@ -166,7 +221,7 @@ void RGBLights()
 
   for(int i = 0; i < 4; i++)
   {
-    byte r = int(255 * abs(2 * fmod(t * f + ((float)(i * 0.25f) + 1.0)/3, 1) - 1));          // Main wave
+    byte r = int(255 * abs(2 * fmod(t * f + ((float)(i * 0.25f) + 1.0)/3, 1) - 1));  // Main wave
     byte g = int(255 * abs(2 * fmod(t * f + ((float)(i * 0.25f) + 2.0)/3, 1) - 1));  // 120° phase shift
     byte b = int(255 * abs(2 * fmod(t * f + ((float)(i * 0.25f) + 3.0)/3, 1) - 1));  // 240° phase shift
 
@@ -176,13 +231,37 @@ void RGBLights()
   pixels.show();
 }
 
+bool allSensorsBlack()
+{
+  for(int i = 0; i < 6; i++)
+  {
+    if(analogRead(_lineSensorPins[i]) < _lineTresholds[i])
+    {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool anySensorBlack()
+{
+  for(int i = 0; i < 6; i++)
+  {
+    if(analogRead(_lineSensorPins[i]) > _lineTresholds[i])
+    {
+      return true;
+    }
+  }
+  return false;
+}
+
 void navigateMazeLeftHand()
 {
   followLeftWall(100);
   
   if(millis() > _nextFrontWallCheck && getFrontDistance() < 12)
   {    
-    setLights(0, 3, 255, 165, 0); // Set the lights to orange - indicate different movement
+    setLights(0, 3, 0, 0, 255); // Set the lights to blue - indicate different movement
     
     //determine the type of the turn - different situations require different allignments
     if(getRightDistance() < 15)
@@ -197,8 +276,6 @@ void navigateMazeLeftHand()
       drive(100, 85, 0.5);
     }
     
-    setLights(0, 3, 0, 255, 0); // Set the lights to green - indicate normal movement
-
     _nextFrontWallCheck += _frontWallCheckDelay;
   }
 }
@@ -209,7 +286,7 @@ void navigateMazeRightHand()
   
   if(millis() > _nextFrontWallCheck && getFrontDistance() < 12)
   {    
-    setLights(0, 3, 255, 165, 0); // Set the lights to orange - indicate different movement
+    setLights(0, 3, 0, 0, 255); // Set the lights to orange - indicate different movement
     
     //determine the type of the turn - different situations require different allignments
     if(getLeftDistance() < 15)
@@ -224,8 +301,6 @@ void navigateMazeRightHand()
       drive(100, -85, 0.5);
     }
 
-    setLights(0, 3, 0, 255, 0); // Set the lights to green - indicate normal movement
-
     _nextFrontWallCheck += _frontWallCheckDelay;
   }
 }
@@ -237,6 +312,8 @@ void driveIntoMaze()
 
   // Calibrate the line sensors
   // This will allow the robot to get close egougth to the cone to pick it up
+  drive(100);
+  delay(10);
   calibrateSensors();
   
   setGripper(GRIPPER_CLOSE); // Open the gripper
@@ -253,43 +330,6 @@ void driveIntoMaze()
   {
     followLine(85, 100);
   }
-}
-
-void turnToAngle(int angleGoalDegrees, int speed, int turnAngle = 100)
-{
-  float angleGoal = map(angleGoalDegrees, 0, 90, 0, -15);
-  float currentAngle = 0;
-
-  int angleScanDelay = 100;
-  int nextScanTime = millis();
-
-  if(angleGoalDegrees < 0)
-  {
-    drive(speed, -turnAngle);
-  }
-  else
-  {
-    drive(speed, turnAngle);
-  }
-  
-  Serial.println(angleGoal);
-  while ((angleGoal > 0 && angleGoal > currentAngle) || (angleGoal < 0 && angleGoal < currentAngle))
-  {
-    if(millis() > nextScanTime)
-    {
-      sensors_event_t accel, gyro, temp;
-      lsm6ds.getEvent(&accel, &gyro, &temp);
-
-      if(abs(gyro.gyro.z) > 0.05)
-      {
-        currentAngle += gyro.gyro.z;
-      }
-      nextScanTime = millis() + angleScanDelay;
-      Serial.println(currentAngle);
-    }
-  }
-
-  drive(0);
 }
 
 void setLights(int startIndex, int endIndex, int r, int g, int b)
@@ -396,7 +436,7 @@ void calibrateSensors()
   //calculate the tresholds (the average between the brightest and dimmest values)
   for (int i = 0; i < 6; i++)
   {
-    _lineTresholds[i] = (_maxValues[i] + _minValues[i]) / 2;
+    _lineTresholds[i] = ((_maxValues[i] + _minValues[i]) / 2) - 100;
   }
 }
 
