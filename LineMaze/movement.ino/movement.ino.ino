@@ -1,6 +1,6 @@
 #include <Adafruit_NeoPixel.h>
 
-#define TESTING_MODE true
+#define TESTING_MODE false
 //NeoPixel pin
 #define PIN 5
 //NeoPixel settings
@@ -35,8 +35,11 @@
 
 //Movement
 #define MOTOR_TURN_SPEED 170
-#define CHECK_STRAIGT_LINE_MOVEMENT 7
+#define CHECK_STRAIGT_LINE_MOVEMENT 5
 
+
+// A - right wheel 
+// B -left wheel 
 #define MOTOR_A_SPEED 245
 #define MOTOR_B_SPEED 245
 
@@ -109,13 +112,6 @@ void loop() {
     started = true;
   }
 
-  //  goStraight();
-
-  //  turnRight(20);
-//  turnRightUltra();
-  //  delay(2000);
-  //  stop();
-  //  delay(2000);
 
 
   //  //Game logic
@@ -157,6 +153,7 @@ void start() {
 
   int distance = culculateDistance();
   Serial.println(distance);
+  // check if there is an object infront and not another batle bot
   int countToStart = 0;
   while (distance >= 30 || countToStart < 5) {
     distance = culculateDistance();
@@ -179,7 +176,7 @@ void start() {
     delay(100);
     int curentColor = getAverageLightLevel();
     delay(100);
-    goStraightSlow();
+    goStraightSlowStart();
 
     color = curentColor;
     while (color > curentColor - 300 && color < curentColor + 300) {
@@ -418,6 +415,13 @@ void goStraightSlow() {
   analogWrite(MOT_B1, LOW);
 }
 
+void goStraightSlowStart() {
+  analogWrite(MOT_A2, MOTOR_A_SLOW_SPEED );
+  analogWrite(MOT_B2, MOTOR_B_SLOW_SPEED + 24);
+  analogWrite(MOT_A1, LOW);
+  analogWrite(MOT_B1, LOW);
+}
+
 void goStraight(int d) {
   countL = 0;
   countR = 0;
@@ -500,17 +504,17 @@ void turnLeft(int d) {
 }
 
 void turnRightUltra() {
-  fullTurnRight();
-  //  while (true) {
-  //    read();
-  //    if (isCenterSensors()) {
-  //      stop();
-  //      break;
-  //    }
-  //  }
+  fullTurnRightSlow();
+   while (true) {
+     read();
+     if (isCenterSensors()) {
+       stop();
+       break;
+     }
+   }
   stop();
   fullTurnLeft();
-  delay(140);
+  delay(100);
   stop();
 }
 
@@ -538,21 +542,8 @@ void fullTurnRight() {
   analogWrite(MOT_A2, LOW);
 }
 
-// Shows robot initialization visualy
 void activationWait() {
-  pixels.setPixelColor(0, pixels.Color(0, BRIGHTNES_LEVEL, 0));
-  pixels.show();
-  delay(1000);
-  pixels.setPixelColor(1, pixels.Color(BRIGHTNES_LEVEL, BRIGHTNES_LEVEL, 0));
-  pixels.show();
-  delay(1000);
-  pixels.setPixelColor(2, pixels.Color(BRIGHTNES_LEVEL, 0, 0));
-  pixels.show();
-  delay(1000);
-  pixels.setPixelColor(3, pixels.Color(BRIGHTNES_LEVEL, 0, 0));
-  pixels.show();
-  delay(1000);
-  setPixlsGreen();
+  delay(2000);
 }
 
 //Lights
