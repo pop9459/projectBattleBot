@@ -68,7 +68,7 @@ Adafruit_NeoPixel pixels = Adafruit_NeoPixel(4, NEOPIXEL_PIN, NEO_RGB + NEO_KHZ8
 
 // Driving constants
 #define PULSES_PER_REVOLUTION 20 // Number of pulses the rotation sensor outputs per revolution 
-#define STEERING_ADJUSTMENT 2 // Used to balance the speed
+#define STEERING_ADJUSTMENT 0 // Used to balance steering
 
 volatile unsigned int _leftPulses; //number of pulses counted by the left rotation sensor
 volatile unsigned int _rightPulses; //number of pulses counted by the right rotation sensor
@@ -92,6 +92,9 @@ int _nextFrontWallCheck = 0;
 
 // Fine tuning variables
 float _wallTargetDistance = 8.5;
+
+// Controll vars
+bool _rightHand = true;
 
 void setup() {
   // Initialize the neopixels  
@@ -133,15 +136,16 @@ void setup() {
 
   setLights(0, 3, 255, 0, 0); // Set the lights to blue
 
-  while (getFrontDistance() > 15)
+  while (getFrontDistance() > 25)
   {
     setGripper(GRIPPER_OPEN); // Ensure the gripper is open
     delay(100);
     // Wait for previous robot
   }
   
-  delay(1000); // Wait for the previus robot to leave
+  setGripper(GRIPPER_OPEN); // Ensure the gripper is open
 
+  delay(1000); // Wait for the previus robot to leave
 
   driveIntoMaze();
 }
@@ -165,15 +169,22 @@ void loop() {
   
   bool lineDetected = false;
   bool checkpointDetected = false;
-  unsigned int lightUpdateDelay = 50;
-  unsigned int nextLightUpdate = millis();
-  unsigned int checkpointUpdateDelay = 100;
-  unsigned int nextCheckpointUpdate = millis() + 5000;
+  unsigned long lightUpdateDelay = 50;
+  unsigned long nextLightUpdate = millis();
+  unsigned long checkpointUpdateDelay = 100;
+  unsigned long nextCheckpointUpdate = millis() + 5000;
 
   // Navigate the maze using the left hand rule
   while (!lineDetected)
   {
-    navigateMazeRightHand();
+    if(_rightHand)
+    {
+      navigateMazeRightHand();
+    }
+    else
+    {
+      navigateMazeLeftHand();
+    }
 
     if(millis() > nextLightUpdate)
     {
@@ -189,7 +200,22 @@ void loop() {
   }
 
   setLights(0, 3, 0, 0, 255); // Set the lights to green
-
+  
+  unsigned long adjustToWallTime = millis() + 250;
+  while (millis() < adjustToWallTime)
+  {
+    if(_rightHand)
+    {
+      navigateMazeRightHand();
+    }
+    else
+    {
+      navigateMazeLeftHand();
+    }
+  }
+  
+  // nextCheckpointUpdate = millis() + 500;
+  
   // Drive out of the maze following the black line
   while (!checkpointDetected)
   {
@@ -212,6 +238,7 @@ void loop() {
     setLights(0, 3, 0, 0, 0); // Set the lights to off
     delay(1000);
   }
+  drive(-100, 0, 0.5);
 }
 
 void RGBLights()
@@ -322,11 +349,15 @@ void driveIntoMaze()
 
   // manually steer into the maze
   drive(60, 0, 0.25); // forward a bit
-  drive(60, -35, 1); // steer left
+  drive(60, -35, 0.25); // steer left
+  while (!anySensorBlack())
+  {
+    drive(60, -35); // steer left
+  }
 
   // follow the short line untill in a set possition
   int startTime = millis();
-  while(millis() < startTime + 600)
+  while(millis() < startTime + 1200)
   {
     followLine(85, 100);
   }
@@ -386,22 +417,22 @@ void followLine(int slowSpeed, int fastSpeed)
 void followRightWall(int speed)
 {
   float wallDistance = getRightDistance();
-  float targetDistance = 8.5; // Target distance from the wall
+  float targetDistance = _wallTargetDistance; // Target distance from the wall
   float error = targetDistance - wallDistance; // The difference between the target distance and the actual distance
-  float Kp = -15; // Proportional gain - fine tunung value
+  float Kp = -14; // Proportional gain - fine tunung value
 
   // Calculate the steering adjustment based on the proportional controller
   float steerPercent = Kp * error;
 
   // Drive the robot with the calculated steering adjustment
-  steerPercent = constrain(steerPercent, -35, 35);
+  steerPercent = constrain(steerPercent, -40, 40);
   drive(speed, steerPercent);
 }
 
 void followLeftWall(int speed)
 {
   float wallDistance = getLeftDistance();
-  float targetDistance = 8.5; // Target distance from the wall
+  float targetDistance = _wallTargetDistance - 0.5; // Target distance from the wall
   float error = targetDistance - wallDistance; // The difference between the target distance and the actual distance
   float Kp = 15; // Proportional gain - fine tunung value
 
@@ -409,7 +440,7 @@ void followLeftWall(int speed)
   float steerPercent = Kp * error;
 
   // Drive the robot with the calculated steering adjustment
-  steerPercent = constrain(steerPercent, -35, 35);
+  steerPercent = constrain(steerPercent, -40, 40);
   drive(speed, steerPercent);
 }
 
@@ -417,8 +448,8 @@ void followLeftWall(int speed)
 // Use in the begining of the execution
 void calibrateSensors()
 {
-  int startTime = millis(); //mark the starting time
-  int calibrationTime = 1350; //calibrate for this amount of tiems
+  unsigned long startTime = millis(); //mark the starting time
+  unsigned long calibrationTime = 1350; //calibrate for this amount of tiems
   drive(55); //start slowly creeping forward
   
   // Drive over a small distance and mark the brightest and dimmest values for each sensor
@@ -436,7 +467,7 @@ void calibrateSensors()
   //calculate the tresholds (the average between the brightest and dimmest values)
   for (int i = 0; i < 6; i++)
   {
-    _lineTresholds[i] = ((_maxValues[i] + _minValues[i]) / 2) - 100;
+    _lineTresholds[i] = ((_maxValues[i] + _minValues[i]) / 2) - 50;
   }
 }
 
