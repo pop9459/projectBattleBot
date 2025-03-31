@@ -174,47 +174,9 @@ void loop() {
   unsigned long checkpointUpdateDelay = 100;
   unsigned long nextCheckpointUpdate = millis() + 5000;
 
-  // Navigate the maze using the left hand rule
-  while (!lineDetected)
-  {
-    if(_rightHand)
-    {
-      navigateMazeRightHand();
-    }
-    else
-    {
-      navigateMazeLeftHand();
-    }
-
-    if(millis() > nextLightUpdate)
-    {
-      RGBLights();
-      nextLightUpdate = millis() + lightUpdateDelay;
-    }
-
-    if(millis() > nextCheckpointUpdate)
-    {
-      lineDetected = anySensorBlack();
-      nextCheckpointUpdate = millis() + checkpointUpdateDelay;
-    }
-  }
-
   setLights(0, 3, 0, 0, 255); // Set the lights to green
   
-  unsigned long adjustToWallTime = millis() + 250;
-  while (millis() < adjustToWallTime)
-  {
-    if(_rightHand)
-    {
-      navigateMazeRightHand();
-    }
-    else
-    {
-      navigateMazeLeftHand();
-    }
-  }
-  
-  // nextCheckpointUpdate = millis() + 500;
+  nextCheckpointUpdate = millis() + 500;
   
   // Drive out of the maze following the black line
   while (!checkpointDetected)
@@ -223,11 +185,14 @@ void loop() {
 
     if(millis() > nextCheckpointUpdate)
     {
-      checkpointDetected = allSensorsBlack();
+      if(allSensorsBlack())
+      {
+        drive(100, 0, 0.2);
+        checkpointDetected = allSensorsBlack();
+      }
       nextCheckpointUpdate = millis() + checkpointUpdateDelay;
     }
   }
-
 
   drive(0);
   while (true)
@@ -238,7 +203,6 @@ void loop() {
     setLights(0, 3, 0, 0, 0); // Set the lights to off
     delay(1000);
   }
-  drive(-100, 0, 0.5);
 }
 
 void RGBLights()
