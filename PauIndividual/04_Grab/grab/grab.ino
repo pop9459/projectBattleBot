@@ -31,6 +31,8 @@ void setup() {
 }
 
 void loop() {
+  grab();
+  delay(1000)
   ungrab();
   delay(1000);
   grab();
