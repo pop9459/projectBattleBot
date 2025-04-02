@@ -169,11 +169,85 @@ void loop() {
   
   bool lineDetected = false;
   bool checkpointDetected = false;
-  unsigned long lightUpdateDelay = 50;
+  unsigned long lightUpdateDelay = 25;
   unsigned long nextLightUpdate = millis();
-  unsigned long checkpointUpdateDelay = 100;
+  unsigned long checkpointUpdateDelay = 5;
   unsigned long nextCheckpointUpdate = millis() + 5000;
 
+  // ################ LINE PART ################
+  // while (!checkpointDetected)
+  // {
+  //   followLine(80, 100);
+
+  //   if(millis() > nextCheckpointUpdate)
+  //   {
+  //     if(allSensorsBlack())
+  //     {
+  //       drive(100, 0, 0.2);
+  //       checkpointDetected = allSensorsBlack();
+  //     }
+  //     nextCheckpointUpdate = millis() + checkpointUpdateDelay;
+  //   }
+  // }
+
+  // ################ LINE MAZE PART ################
+
+  checkpointDetected = false;
+  nextCheckpointUpdate = millis() + 250;
+
+  while (!checkpointDetected)
+  {
+    followLine(60, 100);
+
+    if(millis() > nextCheckpointUpdate)
+    { 
+      // intersection case X - possible checkpoint
+      if(allSensorsBlack())
+      {
+        drive(100, 0, 0.2);
+        checkpointDetected = allSensorsBlack();
+        
+        // navigate intersection if no checkpoint is detected
+        if(!checkpointDetected)
+        {
+          while (analogRead(_lineSensorPins[0]) < _lineTresholds[0])
+          {
+            drive(100, -100);
+          }
+        }
+      }
+      // intersection case turn left
+      else if(analogRead(_lineSensorPins[2]) > _lineTresholds[2] && analogRead(_lineSensorPins[3]) > _lineTresholds[3] && analogRead(_lineSensorPins[0]) > _lineTresholds[0])
+      {
+        unsigned long startTime = millis();
+        drive(-100, 0, 0.3);
+        while (millis() < startTime + 1000)
+        {
+          if(analogRead(_lineSensorPins[1]) > _lineTresholds[1])
+          {
+            drive(100, -50);
+          }
+          else
+          {
+            drive(100);
+          }
+        }
+      }
+      // intersection case dead end - turn around until line
+      else if(analogRead(_lineSensorPins[2]) < _lineTresholds[2] && analogRead(_lineSensorPins[3]) < _lineTresholds[3])
+      {
+        while (!anySensorBlack())
+        {
+          drive(100, 100);
+        }
+      }
+      
+      nextCheckpointUpdate = millis() + checkpointUpdateDelay;
+    } 
+  }
+  
+
+  // ################ MAZE PART ################
   // Navigate the maze using the left hand rule
   while (!lineDetected)
   {
