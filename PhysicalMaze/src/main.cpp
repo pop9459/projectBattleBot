@@ -136,7 +136,7 @@ void setup() {
 
   setLights(0, 3, 255, 0, 0); // Set the lights to blue
 
-  while (getFrontDistance() > 25)
+  while (getFrontDistance() > 22)
   {
     setGripper(GRIPPER_OPEN); // Ensure the gripper is open
     delay(100);
@@ -172,7 +172,7 @@ void loop() {
   unsigned long lightUpdateDelay = 50;
   unsigned long nextLightUpdate = millis();
   unsigned long checkpointUpdateDelay = 100;
-  unsigned long nextCheckpointUpdate = millis() + 5000;
+  unsigned long nextCheckpointUpdate = millis() + 10000;
 
   // Navigate the maze using the left hand rule
   while (!lineDetected)
@@ -348,11 +348,11 @@ void driveIntoMaze()
   delay(500); // Small delay to prevent cone bumping 
 
   // manually steer into the maze
-  drive(60, 0, 0.25); // forward a bit
-  drive(60, -35, 0.25); // steer left
-  while (!anySensorBlack())
+  drive(60, 0, 0.5); // forward a bit
+  drive(60, -100, 0.35); // steer left
+  while(analogRead(_lineSensorPins[5]) < _lineTresholds[5])
   {
-    drive(60, -35); // steer left
+    drive(60, -100); // steer left
   }
 
   // follow the short line untill in a set possition
@@ -467,7 +467,7 @@ void calibrateSensors()
   //calculate the tresholds (the average between the brightest and dimmest values)
   for (int i = 0; i < 6; i++)
   {
-    _lineTresholds[i] = ((_maxValues[i] + _minValues[i]) / 2) - 50;
+    _lineTresholds[i] = ((_maxValues[i] + _minValues[i]) / 2);
   }
 }
 
