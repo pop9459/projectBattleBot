@@ -220,7 +220,7 @@ void loop() {
       else if(analogRead(_lineSensorPins[2]) > _lineTresholds[2] && analogRead(_lineSensorPins[3]) > _lineTresholds[3] && analogRead(_lineSensorPins[0]) > _lineTresholds[0])
       {
         unsigned long startTime = millis();
-        drive(-100, 0, 0.3);
+        // drive(100, 0, 0.3);
         while (millis() < startTime + 1000)
         {
           if(analogRead(_lineSensorPins[1]) > _lineTresholds[1])
@@ -238,7 +238,7 @@ void loop() {
       {
         while (!anySensorBlack())
         {
-          drive(100, 100);
+          drive(100, -100);
         }
       }
       
@@ -541,7 +541,7 @@ void calibrateSensors()
   //calculate the tresholds (the average between the brightest and dimmest values)
   for (int i = 0; i < 6; i++)
   {
-    _lineTresholds[i] = ((_maxValues[i] + _minValues[i]) / 2) - 50;
+    _lineTresholds[i] = ((_maxValues[i] + _minValues[i]) / 2);
   }
 }
 
