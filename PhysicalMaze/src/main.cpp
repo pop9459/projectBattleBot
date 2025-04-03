@@ -77,7 +77,7 @@ volatile unsigned int _rightPulses; //number of pulses counted by the right rota
 int _minValues[] = {1023, 1023, 1023, 1023, 1023, 1023}; //DARKEST VALUES
 int _maxValues[] = {500, 500, 500, 500, 500, 500}; //LIGHTEST VALUES
 int _lineTresholds[] = {800, 800, 800, 800, 800, 800}; //treshold for the line sensors
-float _line_sensor_modifiers[] = {6, 3.5, 1.75, -1.75, -3.5, -6}; // weights for adjusting the intensity of steering based on the sensor position
+float _line_sensor_modifiers[] = {5, 2, 1, -1, -2, -5}; // weights for adjusting the intensity of steering based on the sensor position
 
 int _currentLeftSpeed = 0; //current speed of the left motor
 int _currentRightSpeed = 0; //current speed of the right motor
@@ -175,36 +175,35 @@ void loop() {
   unsigned long nextCheckpointUpdate = millis() + 5000;
 
   // ################ LINE PART ################
-  // while (!checkpointDetected)
-  // {
-  //   followLine(80, 100);
+  while (!checkpointDetected)
+  {
+    followLine(80, 100);
 
-  //   if(millis() > nextCheckpointUpdate)
-  //   {
-  //     if(allSensorsBlack())
-  //     {
-  //       drive(100, 0, 0.2);
-  //       checkpointDetected = allSensorsBlack();
-  //     }
-  //     nextCheckpointUpdate = millis() + checkpointUpdateDelay;
-  //   }
-  // }
+    if(millis() > nextCheckpointUpdate)
+    {
+      if(allSensorsBlack())
+      {
+        drive(100, 0, 0.2);
+        checkpointDetected = allSensorsBlack();
+      }
+      nextCheckpointUpdate = millis() + checkpointUpdateDelay;
+    }
+  }
 
   // ################ LINE MAZE PART ################
-
   checkpointDetected = false;
   nextCheckpointUpdate = millis() + 250;
 
   while (!checkpointDetected)
   {
-    followLine(60, 100);
-
+    followLine(80, 100);
+    
     if(millis() > nextCheckpointUpdate)
     { 
       // intersection case X - possible checkpoint
       if(allSensorsBlack())
       {
-        drive(100, 0, 0.2);
+        drive(60, 0, 0.2);
         checkpointDetected = allSensorsBlack();
         
         // navigate intersection if no checkpoint is detected
@@ -212,24 +211,29 @@ void loop() {
         {
           while (analogRead(_lineSensorPins[0]) < _lineTresholds[0])
           {
-            drive(100, -100);
+            drive(70, -100);
           }
         }
       }
       // intersection case turn left
-      else if(analogRead(_lineSensorPins[2]) > _lineTresholds[2] && analogRead(_lineSensorPins[3]) > _lineTresholds[3] && analogRead(_lineSensorPins[0]) > _lineTresholds[0])
+      else if(analogRead(_lineSensorPins[2]) > _lineTresholds[2] && analogRead(_lineSensorPins[3]) > _lineTresholds[3] && analogRead(_lineSensorPins[5]) > _lineTresholds[5])
       {
         unsigned long startTime = millis();
-        // drive(100, 0, 0.3);
-        while (millis() < startTime + 1000)
+        drive(60, 0, 0.3);
+        while (analogRead(_lineSensorPins[5]) < _lineTresholds[5])
         {
-          if(analogRead(_lineSensorPins[1]) > _lineTresholds[1])
+          drive(70, -100);
+        }
+      }
+      // intersection case turn right
+      else if(analogRead(_lineSensorPins[2]) > _lineTresholds[2] && analogRead(_lineSensorPins[3]) > _lineTresholds[3] && analogRead(_lineSensorPins[0]) > _lineTresholds[0])
+      {
+        drive(60, 0, 0.3);
+        if(analogRead(_lineSensorPins[2]) < _lineTresholds[2] && analogRead(_lineSensorPins[3]) < _lineTresholds[3])
+        {
+          while (analogRead(_lineSensorPins[0]) < _lineTresholds[0])
           {
-            drive(100, -50);
-          }
-          else
-          {
-            drive(100);
+            drive(70, 100);
           }
         }
       }
@@ -238,16 +242,19 @@ void loop() {
       {
         while (!anySensorBlack())
         {
-          drive(100, -100);
+          drive(70, -100);
         }
       }
       
       nextCheckpointUpdate = millis() + checkpointUpdateDelay;
     } 
   }
-  
 
   // ################ MAZE PART ################
+
+  checkpointDetected = false;
+  nextCheckpointUpdate = millis() + 5000;
+
   // Navigate the maze using the left hand rule
   while (!lineDetected)
   {
@@ -424,7 +431,7 @@ void driveIntoMaze()
   // manually steer into the maze
   drive(60, 0, 0.25); // forward a bit
   drive(60, -35, 0.25); // steer left
-  while (!anySensorBlack())
+  while (analogRead(_lineSensorPins[5]) < _lineTresholds[5])
   {
     drive(60, -35); // steer left
   }
@@ -541,7 +548,7 @@ void calibrateSensors()
   //calculate the tresholds (the average between the brightest and dimmest values)
   for (int i = 0; i < 6; i++)
   {
-    _lineTresholds[i] = ((_maxValues[i] + _minValues[i]) / 2);
+    _lineTresholds[i] = ((_maxValues[i] + _minValues[i]) / 2) - 50;
   }
 }
 
