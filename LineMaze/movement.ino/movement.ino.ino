@@ -59,6 +59,14 @@ Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
 const int sensorPins[] = { A0, A1, A2, A3, A4, A5, A6, A7 };
 int sensor_A0, sensor_A1, sensor_A2, sensor_A3, sensor_A4, sensor_A5, sensor_A6, sensor_A7;
 
+// Define distance threshold (in cm)
+const int _mazeDistanceThreshold = 10;
+
+// Calibration values for the line sensors
+int _minValues[] = {1023, 1023, 1023, 1023, 1023, 1023, 1023, 1023}; // DARKEST VALUES
+int _maxValues[] = {500, 500, 500, 500, 500, 500, 500, 500};         // LIGHTEST VALUES
+int _lineTresholds[] = {800, 800, 800, 800, 800, 800, 800, 800};     // Threshold for the line sensors
+
 //Bot state
 bool started = false;
 bool solved = false;
@@ -115,14 +123,14 @@ void loop() {
 
 
   //  //Game logic
-    if (!started) {
-      start();
-    } else if (!solved) {
-      maze();
-    }
-     else if (!ended) {
-      end();
-    }
+  if (!started) {
+    start();
+  } else if (!solved) {
+    maze();
+  }
+    else if (!ended) {
+    end();
+  }
 
 
 }
@@ -143,14 +151,14 @@ void testSensors() {
     smallTurnLeft();
     Serial.print("I am A5 sensor, adjusting left \n");
   } else {
-    Serial.print("going straight\n");
-  }
+  Serial.print("going straight\n");
+ }
 }
 
-//Running when obstacle apper and calibrate black limit
+// //Running when obstacle apper and calibrate black limit
 void start() {
+  ungrab();
   //Check is obstacle appear
-
   int distance = culculateDistance();
   Serial.println(distance);
   // check if there is an object infront and not another batle bot
@@ -166,46 +174,37 @@ void start() {
   }
   activationWait();
 
-  //Calibration for black limit
-  int blackLimit[3];
-  int currentIndex = 0;
-  int color;
+//   //Calibration for black limit
+//   int blackLimit[3];
+//   int currentIndex = 0;
+//   int color;
 
-  for (int i = 0; i < 6; i++) {
-    stop();
-    delay(100);
-    int curentColor = getAverageLightLevel();
-    delay(100);
-    goStraightSlowStart();
+//   for (int i = 0; i < 6; i++) {
+//     stop();
+//     delay(100);
+//     int curentColor = getAverageLightLevel();
+//     delay(100);
+//     goStraightSlowStart();
 
-    color = curentColor;
-    while (color > curentColor - 300 && color < curentColor + 300) {
-      color = getAverageLightLevel();
-    }
-    if (i % 2 == 1) {
-      Serial.println(curentColor);
-      blackLimit[currentIndex] = curentColor;
-      currentIndex++;
-    }
-  }
+//     color = curentColor;
+//     while (color > curentColor - 300 && color < curentColor + 300) {
+//       color = getAverageLightLevel();
+//     }
+//     if (i % 2 == 1) {
+//       Serial.println(curentColor);
+//       blackLimit[currentIndex] = curentColor;
+//       currentIndex++;
+//     }
+//   }
 
-  BLACK_LIMIT = getAverageBlackLimit(blackLimit) - 100;
+  calibrateSensors();
 
-  stop();
-  delay(1000);
+  // BLACK_LIMIT = getAverageBlackLimit(blackLimit) - 100;
 
-  //Adjust movement
-  // while (!isAllSensors()) {
-  //   read();
-  //   if (sensor_A2 >= BLACK_LIMIT) {
-  //     smallTurnRight();
-  //   } else if (sensor_A5 >= BLACK_LIMIT) {
-  //     smallTurnLeft();
-  //   } else {
-  //     goStraightSlow();
-  //   }
-  // }
-  startMovementAdjustment();
+  // stop();
+  // delay(1000);
+
+  // startMovementAdjustment();
 
   grab();
   stop();
@@ -218,53 +217,92 @@ void start() {
   started = true;
 }
 
+// Function used for calculating the error of each of the line sensors
+void calibrateSensors() {
+  int startTime = millis(); // Mark the starting time
+  int calibrationTime = 750; // Calibrate for 1 seconds
+  goStraight(); // Start slowly creeping forward
+  
+  // Drive over a small distance and mark the brightest and dimmest values for each sensor
+  while (millis() - startTime < calibrationTime) {
+    for (int i = 0; i < 8; i++) {
+      int sensorValue = analogRead(sensorPins[i]);
+      if(sensorValue > _maxValues[i]) _maxValues[i] = sensorValue;
+      if(sensorValue < _minValues[i]) _minValues[i] = sensorValue;
+    }
+  }
+  stop();
+
+  // Calculate the thresholds (the average between the brightest and dimmest values)
+  for (int i = 0; i < 8; i++) {
+    _lineTresholds[i] = (_maxValues[i] + _minValues[i]) / 2;
+  }
+
+  int averageTreshold = 0;
+  for (int i = 0; i < 8; i++) {
+    averageTreshold += _lineTresholds[i];
+  }
+  averageTreshold /= 8;
+
+  BLACK_LIMIT = averageTreshold;
+}
+
 //Solve the maze
 void maze() {
   Serial.print("I am maze\n");
   read();
-  if (isLeftSensors()) {
-    Serial.print("I am left sensor\n");
-    stop();
-    delay(10);
-    read();
-  }
 
-  if (isRightSensors()) {
-    goStraight(CHECK_STRAIGT_LINE_MOVEMENT);
-    read();
+  // Read distance from ultrasonic sensor
+  int mazeDistance = getMazeDistance();
 
-    if (isAllSensors()) {
-      Serial.print("I am all sensors\n");
-      solved = true;
+  // Debugging: Print the distance to the Serial Monitor
+  Serial.print("Distance: ");
+  Serial.println(mazeDistance);
+
+  if (mazeDistance > _mazeDistanceThreshold || mazeDistance == 0) {
+    // No obstacle detected: Continue
+    if (isRightSensors()) {
+      goStraight(CHECK_STRAIGT_LINE_MOVEMENT);
+      read();
+
+      if (isAllSensors()) {
+        Serial.print("I am all sensors\n");
+        solved = true;
+      } else {
+        Serial.print("I am right sensor\n");
+
+        turnRight(TURN_90_RIGHT);
+        delay(DELAYVAL);
+      }
+
+    } else if (isLeftSensors()) {
+      goStraight(CHECK_STRAIGT_LINE_MOVEMENT);
+      stop();
+      delay(10);
+      read();
+      if (!isCenterandOrSmallRightSensors()) {
+        turnLeft(TURN_90_LEFT);
+        delay(DELAYVAL);
+      }
+    } else if (isNoSensors()) {
+      Serial.print("I am no sensors detected\n");
+      //    goStraight(8);
+      turnRightUltra();
+      //    delay(DELAYVAL);
+    } else if (sensor_A5 >= BLACK_LIMIT) {
+      smallTurnRight();
+    } else if (sensor_A2 >= BLACK_LIMIT) {
+      smallTurnLeft();
     } else {
-      Serial.print("I am right sensor\n");
-
-      turnRight(TURN_90_RIGHT);
-      delay(DELAYVAL);
+      Serial.print("going straight\n");
+      goStraight();
     }
-
-  } else if (isLeftSensors()) {
-    goStraight(CHECK_STRAIGT_LINE_MOVEMENT);
-    stop();
-    delay(10);
-    read();
-    if (!isCenterandOrSmallRightSensors()) {
-      turnLeft(TURN_90_LEFT);
-      delay(DELAYVAL);
-    }
-  } else if (isNoSensors()) {
-    Serial.print("I am no sensors detected\n");
-//    goStraight(8);
-    turnRightUltra();
-//    delay(DELAYVAL);
-  } else if (sensor_A5 >= BLACK_LIMIT) {
-    smallTurnRight();
-  } else if (sensor_A2 >= BLACK_LIMIT) {
-    smallTurnLeft();
   } else {
-    Serial.print("going straight\n");
-    goStraight();
+    turnRight(TURN_90_RIGHT);
+    turnRightUltra();
   }
+
+  
 }
 
 //Finish maze solving and ungrab obstacle
@@ -376,6 +414,23 @@ int culculateDistance() {
   digitalWrite(trigPin, LOW);
   long duration = pulseIn(echoPin, HIGH);
   return duration * 0.034 / 2;
+}
+
+//Calculate distance in the line maze
+int getMazeDistance() {
+  // Send trigger pulse
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  // Read echo pulse duration
+  long duration = pulseIn(echoPin, HIGH);
+
+  // Calculate distance in cm
+  int distance = duration * 0.034 / 2;  // Speed of sound: 0.034 cm/μs
+  return distance;
 }
 
 // Grab with servo

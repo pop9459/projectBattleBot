@@ -7,11 +7,11 @@ int motorB1 = 9;  // Motor B control pin 1
 int motorB2 = 10; // Motor B control pin 2
 
 // Ultrasonic Sensor (pins 12 and 13)
-int trigger = 12;
-int echo = 13;
+int trigPin = 12;
+int echoPin = 13;
 
 // Define distance threshold (in cm)
-const int distanceThreshold = 10;
+const int _mazeDistanceThreshold = 10;
 
 // Speed Value
 const int speedValue = 90;
@@ -27,19 +27,19 @@ void setup() {
   pinMode(motorB2, OUTPUT);
 
   // Initialize ultrasonic sensor pins
-  pinMode(trigger, OUTPUT);
-  pinMode(echo, INPUT);
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
 }
 
 void loop() {
   // Read distance from ultrasonic sensor
-  int distance = getDistance();
+  int mazeDistance = getMazeDistance();
 
   // Debugging: Print the distance to the Serial Monitor
   Serial.print("Distance: ");
-  Serial.println(distance);
+  Serial.println(mazeDistance);
 
-  if (distance > distanceThreshold || distance == 0) {
+  if (mazeDistance > _mazeDistanceThreshold || mazeDistance == 0) {
     // No obstacle detected: Move forward
     moveForward();
   } else {
@@ -99,20 +99,20 @@ void turnLeft() {
   stopMotors();
 }
 
-int getDistance() {
+int getMazeDistance() {
   // Send trigger pulse
-  digitalWrite(trigger, LOW);
+  digitalWrite(trigPin, LOW);
   delayMicroseconds(2);
-  digitalWrite(trigger, HIGH);
+  digitalWrite(trigPin, HIGH);
   delayMicroseconds(10);
-  digitalWrite(trigger, LOW);
+  digitalWrite(trigPin, LOW);
 
   // Read echo pulse duration
-  long duration = pulseIn(echo, HIGH);
+  long duration = pulseIn(echoPin, HIGH);
 
   // Calculate distance in cm
-  int distance = duration * 0.034 / 2;  // Speed of sound: 0.034 cm/μs
-  return distance;
+  int mazeDistance = duration * 0.034 / 2;  // Speed of sound: 0.034 cm/μs
+  return mazeDistance;
 }
 
 void avoidObstacle() {
