@@ -252,6 +252,15 @@ void loop() {
 
   // ################ MAZE PART ################
 
+  calibrateSensors();
+  
+  nextCheckpointUpdate = millis() + 2000;
+
+  while (millis() < nextCheckpointUpdate)
+  {
+    followLine(80, 100);
+  }
+
   checkpointDetected = false;
   nextCheckpointUpdate = millis() + 5000;
 
